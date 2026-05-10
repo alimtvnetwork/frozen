@@ -96,7 +96,10 @@ def execute_shutdown(
     if command is None:
         command = list(SHUTDOWN_COMMAND) if current_os() is OSKind.Windows else shutdown_command()
     if dry_run is None:
-        dry_run = is_dry_run_default()
+        # If a custom run_command was injected (tests), default to NOT dry-run
+        # so test assertions on the invoked command still fire. Otherwise honor
+        # the platform default (dry-run on macOS/Linux unless forced).
+        dry_run = is_dry_run_default() if run_command is None else False
 
     pids_targeted: set[int] = set()
     # WM_CLOSE step is Windows-specific; on POSIX we skip the per-window
