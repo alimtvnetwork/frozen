@@ -18,10 +18,17 @@ Phase 5+ stretch shipped:
 - Inno Setup installer: `app/build/installer.iss` — per-user install,
   optional autostart + init-db tasks, autostart removed on uninstall,
   preserves %APPDATA%\IdleShutdown\ across reinstall. README updated.
+- SNSS reader: `capture/snss.py` — SNSS framing (v1 + v3) + base::Pickle
+  primitive reader + `kCommandUpdateTabNavigation` decoder. Wired as default
+  `snss_reader` in `capture_chrome_session`. Chrome tab capture moves from
+  "always empty" to "real URL+title list per latest Tabs_* file". 73 tests
+  passing (incl. v1, v3, multi-command latest-wins, bad magic, truncation,
+  latest-file selection).
 
 Remaining stretch items (only if requested):
-- Chrome SNSS parsing → ChromeTab.GroupName (deep work: needs Chromium
-  base::Pickle decoder + real-Windows SNSS fixtures to validate; deferred).
+- Tab-group decoding (kCommandSetTabGroup + kCommandTabGroupMetadataChanged2)
+  → populate ChromeTab.GroupName. Wire layout shifted across Chromium
+  milestones; needs SNSS fixtures from a real Windows Chrome profile.
 - Code signing (needs cert; out of scope).
 - Manual Windows x64 QA: run `app/build/build.ps1`, then `ISCC build\installer.iss`,
   then walk `app/ACCEPTANCE.md` Manual column.
