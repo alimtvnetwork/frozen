@@ -143,3 +143,46 @@ def test_per_item_failure_continues(temp_db):
     # code.exe failed, notepad.exe + chrome still launched
     assert calls["n"] == 3
     assert result.apps_launched == 1  # only notepad counted as launched
+
+def test_per_desktop_switch_and_move_called(temp_db):
+    init_db()
+    _seed_snapshot(desktop_count=3, app_desktops=(2, 0))
+    spawned: list[list[str]] = []
+    switches: list[int] = []
+    moves: list[tuple[int, int]] = []
+    ensured: list[int] = []
+    next_pid = {"v": 1000}
+
+    def _spawn(argv, cwd):
+        spawned.append(argv)
+        next_pid["v"] += 1
+        return next_pid["v"]
+
+    restore(
+        live_processes=lambda: [],
+        spawn=_spawn,
+        ensure_desktops=lambda n: ensured.append(n),
+        switch_to_desktop=lambda i: switches.append(i),
+        move_to_desktop=lambda pid, i: moves.append((pid, i)),
+    )
+    assert ensured == [3]
+    # Apps grouped: desktop 0 (notepad) then desktop 2 (code)
+    assert switches == [0, 2]
+    # Each app launched gets a move call (chrome on desktop 0 also gets switch but no move call here)
+    assert (1001, 0) in moves and (1002, 2) in moves
+
+
+def test_single_desktop_skips_switch_and_move(temp_db):
+    init_db()
+    _seed_snapshot(desktop_count=1, app_desktops=(0, 0))
+    switches: list[int] = []
+    moves: list[tuple[int, int]] = []
+    restore(
+        live_processes=lambda: [],
+        spawn=lambda argv, cwd: 1234,
+        ensure_desktops=lambda n: None,
+        switch_to_desktop=lambda i: switches.append(i),
+        move_to_desktop=lambda pid, i: moves.append((pid, i)),
+    )
+    assert switches == []
+    assert moves == []
