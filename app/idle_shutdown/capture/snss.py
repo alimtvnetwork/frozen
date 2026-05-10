@@ -41,6 +41,15 @@ logger = logging.getLogger(__name__)
 
 SNSS_MAGIC = b"SNSS"
 CMD_UPDATE_TAB_NAVIGATION = 6
+# Modern Chrome (file version >= 3) writes a marker command with this id at
+# the end of the "initial state" block. It carries no useful payload and must
+# be ignored by readers.
+CMD_INITIAL_STATE_MARKER = 255
+# Supported unencrypted SNSS file versions. v2/v4 were never shipped in
+# production. v5 is OSCrypt-encrypted and cannot be decoded without the
+# user's per-OS key — handled separately.
+SUPPORTED_VERSIONS = (1, 3)
+ENCRYPTED_VERSION = 5
 
 
 # ---------------------------------------------------------------------------
@@ -118,10 +127,16 @@ def _iter_commands(stream: io.BufferedReader) -> Iterator[_RawCommand]:
     if len(header) < 8 or header[:4] != SNSS_MAGIC:
         raise ValueError("not an SNSS file (bad magic)")
     version = struct.unpack("<I", header[4:8])[0]
-    if version not in (1, 3):
+    if version == ENCRYPTED_VERSION:
+        raise ValueError("SNSS v5 is OSCrypt-encrypted; cannot decode")
+    if version not in SUPPORTED_VERSIONS:
         raise ValueError(f"unsupported SNSS version {version}")
-    size_fmt = "<H" if version == 1 else "<I"
-    size_bytes = 2 if version == 1 else 4
+    # SessionCommand::size_type is uint16_t for ALL versions (see Chromium
+    # components/sessions/core/session_command.h). The earlier 4-byte guess
+    # for v3 was wrong and caused every modern session file to parse as a
+    # single absurdly-large garbage frame.
+    size_fmt = "<H"
+    size_bytes = 2
 
     while True:
         sz_raw = stream.read(size_bytes)
@@ -177,6 +192,8 @@ def read_snss_file(path: Path) -> list[ChromeTabInfo]:
     try:
         with path.open("rb") as fh:
             for cmd in _iter_commands(fh):
+                if cmd.command_id == CMD_INITIAL_STATE_MARKER:
+                    continue
                 if cmd.command_id != CMD_UPDATE_TAB_NAVIGATION:
                     continue
                 decoded = _decode_update_tab_navigation(cmd.payload)
