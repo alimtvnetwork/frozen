@@ -131,6 +131,19 @@ try {
         Write-Ok "tests passed"
     }
 
+    # macOS: Quartz is required for real idle detection AND for the
+    # visible-window enumeration used by app/chrome capture. Without it,
+    # snapshots show apps=0 / chrome_tabs=0. Always ensure it's present.
+    if ($Platform -eq "macos") {
+        python -c "import Quartz" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Step "Installing pyobjc-framework-Quartz (needed for app/window capture on macOS)"
+            python -m pip install --quiet pyobjc-framework-Quartz
+            if ($LASTEXITCODE -eq 0) { Write-Ok "pyobjc-framework-Quartz installed" }
+            else { Write-Warn2 "pyobjc-framework-Quartz install failed — snapshots will show apps=0" }
+        }
+    }
+
     # ---------- build (Windows only) ----------
     if (-not $SkipSetup -and $Platform -eq "windows") {
         Write-Step "Building Windows .exe"
