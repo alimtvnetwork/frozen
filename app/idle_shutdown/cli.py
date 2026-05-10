@@ -122,7 +122,35 @@ def cmd_history(limit: int) -> None:
 @cli.command("run")
 @click.option("--silent", is_flag=True, help="Suppress console window (Phase 2).")
 def cmd_run(silent: bool) -> None:  # noqa: ARG001
-    raise click.ClickException("run: implemented in Phase 2")
+    """Foreground service: idle monitor + popup loop."""
+    from idle_shutdown.monitor import IdleMonitor, get_default_idle_source
+    from idle_shutdown.popup import show_popup
+    from idle_shutdown.service import IdleService, ServiceCallbacks
+
+    def _settings_provider(key: str):
+        with connect() as conn:
+            return SettingsRepo(conn).get(key)
+
+    def _take_snapshot_and_shutdown() -> None:
+        # Phase 3/4 will wire the real implementation; for now log + exit popup.
+        click.echo("snapshot+shutdown wiring lands in Phase 3/4")
+
+    callbacks = ServiceCallbacks(
+        show_popup=show_popup,
+        take_snapshot_and_shutdown=_take_snapshot_and_shutdown,
+        get_idle_threshold_minutes=lambda: int(_settings_provider("IdleThresholdMinutes")),
+        get_popup_countdown_seconds=lambda: int(_settings_provider("PopupCountdownSeconds")),
+        get_service_enabled=lambda: _settings_provider("ServiceState") == "Enabled",
+    )
+    service = IdleService(callbacks)
+    monitor = IdleMonitor(
+        source=get_default_idle_source(),
+        threshold_ms_provider=service.threshold_ms,
+        on_threshold=service.on_threshold_reached,
+        on_activity=service.on_activity_during_prompt,
+    )
+    click.echo("idle monitor running (Ctrl+C to stop)")
+    monitor.run_forever()
 
 
 @cli.command("snapshot")
