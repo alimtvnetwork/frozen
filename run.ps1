@@ -1,8 +1,17 @@
 # Idle Shutdown — One-shot Build & Run (PowerShell, Windows / cross-platform pwsh)
-# Just run:  .\run.ps1
-# It will: detect/install Python, create venv, install deps, run tests,
-#          and (on Windows) build the .exe + Inno Setup installer.
-# Configure via run.config.json. No flags needed.
+# Usage:
+#   .\run.ps1                         # first-run setup + tests, then init-db
+#   .\run.ps1 simulate                # forwards to `idle-shutdown simulate`
+#   .\run.ps1 run                     # real idle monitor
+#   .\run.ps1 <any subcmd ...>        # any other CLI subcommand, args pass through
+#   .\run.ps1 -Setup                  # force re-run of setup + tests
+# The venv is created/reused automatically; you never need to activate it.
+
+param(
+    [switch]$Setup,
+    [Parameter(ValueFromRemainingArguments=$true)]
+    [string[]]$CliArgs
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -99,21 +108,30 @@ else { Write-Warn2 "could not find $Activate — falling back to system python" 
 
 Push-Location $AppPath
 try {
-    # ---------- install ----------
-    Write-Step "Installing dependencies"
-    python -m pip install --upgrade pip | Out-Null
-    Invoke-Expression $InstallCmd
-    if ($LASTEXITCODE -ne 0) { Write-Err "install failed"; exit 1 }
-    Write-Ok "dependencies installed"
+    # Skip install/test if the CLI is already on PATH and the user just wants
+    # to run a subcommand. Use -Setup to force re-install.
+    $SkipSetup = $false
+    if (-not $Setup -and $CliArgs.Count -gt 0 -and (Test-Cmd "idle-shutdown")) {
+        $SkipSetup = $true
+    }
 
-    # ---------- test ----------
-    Write-Step "Running tests"
-    Invoke-Expression $TestCmd
-    if ($LASTEXITCODE -ne 0) { Write-Err "tests failed"; exit 1 }
-    Write-Ok "tests passed"
+    if (-not $SkipSetup) {
+        # ---------- install ----------
+        Write-Step "Installing dependencies"
+        python -m pip install --upgrade pip | Out-Null
+        Invoke-Expression $InstallCmd
+        if ($LASTEXITCODE -ne 0) { Write-Err "install failed"; exit 1 }
+        Write-Ok "dependencies installed"
+
+        # ---------- test ----------
+        Write-Step "Running tests"
+        Invoke-Expression $TestCmd
+        if ($LASTEXITCODE -ne 0) { Write-Err "tests failed"; exit 1 }
+        Write-Ok "tests passed"
+    }
 
     # ---------- build (Windows only) ----------
-    if ($Platform -eq "windows") {
+    if (-not $SkipSetup -and $Platform -eq "windows") {
         Write-Step "Building Windows .exe"
         Invoke-Expression $BuildCmd
         if ($LASTEXITCODE -ne 0) { Write-Err "build failed"; exit 1 }
@@ -129,16 +147,40 @@ try {
                 Write-Warn2 "Inno Setup (ISCC.exe) not found — skipping installer step"
             }
         }
-    } else {
+    } elseif (-not $SkipSetup) {
         Write-Warn2 "Windows .exe build skipped on $Platform (logic verified by tests above)"
+    }
+
+    # ---------- forward to CLI ----------
+    if ($CliArgs.Count -gt 0) {
+        Write-Step "Running: idle-shutdown $($CliArgs -join ' ')"
+        & idle-shutdown @CliArgs
+        exit $LASTEXITCODE
+    }
+
+    # No subcommand → init the DB on first run so the CLI works immediately.
+    $DbPath = if ($Platform -eq "windows") {
+        Join-Path $env:LOCALAPPDATA "IdleShutdownRestore\IdleShutdown.db"
+    } else {
+        Join-Path $HOME ".local/share/IdleShutdownRestore/IdleShutdown.db"
+    }
+    if (-not (Test-Path $DbPath)) {
+        Write-Step "Initializing database"
+        & idle-shutdown init-db
     }
 }
 finally { Pop-Location }
 
 Write-Step "All done."
 Write-Host ""
-if ($Platform -eq "windows") {
-    Write-Host "Try the CLI:  .\$VenvDir\Scripts\Activate.ps1; cd $AppDir; idle-shutdown --help"
-} else {
-    Write-Host "Try the CLI:  source $VenvDir/bin/activate && cd $AppDir && idle-shutdown --help"
-}
+Write-Host "No more activating the venv. Just run:" -ForegroundColor Green
+Write-Host ""
+Write-Host "  .\run.ps1 simulate                   " -ForegroundColor Cyan -NoNewline; Write-Host "popup -> countdown -> dry-run shutdown"
+Write-Host "  .\run.ps1 simulate --no-popup        " -ForegroundColor Cyan -NoNewline; Write-Host "headless variant"
+Write-Host "  .\run.ps1 simulate --countdown 10    " -ForegroundColor Cyan -NoNewline; Write-Host "custom countdown"
+Write-Host "  .\run.ps1 run                        " -ForegroundColor Cyan -NoNewline; Write-Host "real idle monitor (Ctrl+C to stop)"
+Write-Host "  .\run.ps1 settings show              " -ForegroundColor Cyan -NoNewline; Write-Host "view config"
+Write-Host "  .\run.ps1 settings set-idle 1        " -ForegroundColor Cyan -NoNewline; Write-Host "set idle threshold to 1 min"
+Write-Host "  .\run.ps1 history                    " -ForegroundColor Cyan -NoNewline; Write-Host "shutdown history"
+Write-Host "  .\run.ps1 --help                     " -ForegroundColor Cyan -NoNewline; Write-Host "full CLI help"
+Write-Host "  .\run.ps1 -Setup                     " -ForegroundColor Cyan -NoNewline; Write-Host "force re-install + re-run tests"
