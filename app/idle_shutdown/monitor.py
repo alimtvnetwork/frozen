@@ -51,9 +51,54 @@ def _build_win32_source() -> IdleSource:  # pragma: no cover - exercised on Wind
     return _Source()
 
 
+def _build_macos_source() -> IdleSource:  # pragma: no cover - exercised on macOS only
+    """Read idle seconds via Quartz CGEventSource. Falls back to stub if
+    pyobjc isn't installed."""
+    try:
+        from Quartz import (  # type: ignore
+            CGEventSourceSecondsSinceLastEventType,
+            kCGAnyInputEventType,
+            kCGEventSourceStateHIDSystemState,
+        )
+    except Exception:
+        return StubIdleSource()
+
+    class _Source:
+        def get_idle_ms(self) -> int:
+            secs = CGEventSourceSecondsSinceLastEventType(
+                kCGEventSourceStateHIDSystemState, kCGAnyInputEventType
+            )
+            return int(float(secs) * 1000)
+
+    return _Source()
+
+
+def _build_linux_source() -> IdleSource:  # pragma: no cover - exercised on Linux X11 only
+    """Shell out to ``xprintidle`` (X11). Falls back to stub if missing."""
+    import shutil as _sh
+    import subprocess
+
+    if not _sh.which("xprintidle"):
+        return StubIdleSource()
+
+    class _Source:
+        def get_idle_ms(self) -> int:
+            try:
+                out = subprocess.check_output(["xprintidle"], timeout=2)
+                return int(out.strip())
+            except Exception as e:  # noqa: BLE001
+                raise MonitorError(f"xprintidle failed: {e}") from e
+
+    return _Source()
+
+
 def get_default_idle_source() -> IdleSource:
     if sys.platform == "win32":
         return _build_win32_source()
+    if sys.platform == "darwin":
+        return _build_macos_source()
+    if sys.platform.startswith("linux"):
+        return _build_linux_source()
     return StubIdleSource()
 
 
