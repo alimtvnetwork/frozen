@@ -2,16 +2,16 @@
 
 Scope (MVP):
 - Framing: parse the well-known SNSS file header (``SNSS`` magic + version 1
-  or 3) and iterate commands. v1 uses 2-byte size prefixes, v3 uses 4-byte.
+  or 3) and iterate commands. All supported versions use 2-byte size prefixes.
   Each command frame: ``size`` then 1-byte command id then ``size - 1`` bytes
   of payload.
 - Inner payload uses Chromium's ``base::Pickle`` wire format: a 4-byte LE
   payload-size header (which we ignore — the outer frame already bounds it),
   followed by primitives padded to 4-byte alignment. We implement
   ``read_int32``, ``read_string`` (UTF-8) and ``read_string16`` (UTF-16LE).
-- Command decoding: ONLY ``kCommandUpdateTabNavigation`` (id 6 in
-  Chromium ``components/sessions/core/session_service_commands.cc``). Payload
-  layout: ``int32 tab_id`` then a nested Pickle blob containing
+- Command decoding: ONLY ``UpdateTabNavigation`` (id 1 in ``Tabs_*`` files,
+  id 6 in ``Session_*`` files). Payload layout: ``int32 tab_id`` then
+  Chromium ``SerializedNavigationEntry`` fields beginning with
   ``int32 nav_index, string url, string16 title, ...``. We keep the latest
   URL+title per tab_id and emit one window with all surviving tabs.
 
@@ -41,6 +41,11 @@ logger = logging.getLogger(__name__)
 
 SNSS_MAGIC = b"SNSS"
 CMD_UPDATE_TAB_NAVIGATION = 6
+CMD_TAB_RESTORE_UPDATE_TAB_NAVIGATION = 1
+UPDATE_TAB_NAVIGATION_COMMAND_IDS = frozenset({
+    CMD_UPDATE_TAB_NAVIGATION,
+    CMD_TAB_RESTORE_UPDATE_TAB_NAVIGATION,
+})
 # Modern Chrome (file version >= 3) writes a marker command with this id at
 # the end of the "initial state" block. It carries no useful payload and must
 # be ignored by readers.
