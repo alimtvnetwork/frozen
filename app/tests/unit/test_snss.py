@@ -5,6 +5,7 @@ import struct
 from pathlib import Path
 
 from idle_shutdown.capture.snss import (
+    CMD_TAB_RESTORE_UPDATE_TAB_NAVIGATION,
     CMD_UPDATE_TAB_NAVIGATION,
     SNSS_MAGIC,
     PickleReader,
@@ -41,9 +42,9 @@ def pickle_blob(*parts: bytes) -> bytes:
 
 
 def update_tab_nav_payload(tab_id: int, nav_index: int, url: str, title: str) -> bytes:
-    inner_body = p_int32(nav_index) + p_string(url) + p_string16(title)
-    # Outer pickle: tab_id, then inner pickle as length-prefixed blob.
-    outer_body = p_int32(tab_id) + p_int32(len(inner_body)) + inner_body
+    # Chromium writes tab_id followed directly by SerializedNavigationEntry
+    # fields. The reader only needs the first three entry fields.
+    outer_body = p_int32(tab_id) + p_int32(nav_index) + p_string(url) + p_string16(title)
     return pickle_blob(*[outer_body])  # whole outer pickle (with its size header)
 
 
@@ -87,7 +88,7 @@ def _write(tmp_path: Path, name: str, data: bytes) -> Path:
 
 def test_v1_single_command(tmp_path: Path):
     payload = update_tab_nav_payload(1, 0, "https://example.com/", "Example")
-    snss = make_snss(1, [(CMD_UPDATE_TAB_NAVIGATION, payload)])
+    snss = make_snss(1, [(CMD_TAB_RESTORE_UPDATE_TAB_NAVIGATION, payload)])
     tabs = read_snss_file(_write(tmp_path, "Tabs_1", snss))
     assert len(tabs) == 1
     assert tabs[0].url == "https://example.com/"
