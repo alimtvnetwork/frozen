@@ -202,11 +202,19 @@ def _latest_session_file(sessions_dir: Path) -> Path | None:
     if not sessions_dir.exists():
         return None
     candidates: list[Path] = []
-    for prefix in ("Tabs_", "Session_"):
-        candidates.extend(sessions_dir.glob(f"{prefix}*"))
+    # Modern Chrome writes "Current Tabs"/"Current Session" (live) and
+    # "Last Tabs"/"Last Session" (previous run) with a space. Older Chrome
+    # also kept numbered backups like "Tabs_<N>"/"Session_<N>".
+    for pattern in ("Current Tabs", "Last Tabs", "Tabs_*",
+                    "Current Session", "Last Session", "Session_*"):
+        candidates.extend(sessions_dir.glob(pattern))
     if not candidates:
         return None
-    return max(candidates, key=lambda p: p.stat().st_mtime)
+    # Prefer Tabs* over Session* (smaller, tab-focused), then most recent mtime.
+    def _key(p: Path):
+        is_tabs = "Tabs" in p.name
+        return (1 if is_tabs else 0, p.stat().st_mtime)
+    return max(candidates, key=_key)
 
 
 def default_snss_reader(sessions_dir: Path) -> list[ChromeWindowInfo]:

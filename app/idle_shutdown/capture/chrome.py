@@ -137,13 +137,16 @@ def capture_chrome_session(
 def _chrome_user_data_paths(exe: str, e: dict[str, str]) -> tuple[str | None, str | None]:
     """Return ``(profile_root, sessions_dir)`` for the current OS or
     ``(None, None)`` if the user-data dir cannot be determined."""
-    # Windows path inferred from LOCALAPPDATA (preserves prior behavior even
-    # if ``exe`` came from a non-Windows fallback — tests inject env).
-    win_local = e.get("LOCALAPPDATA")
-    if win_local:
-        root = _WIN_SEP.join([win_local, "Google", "Chrome", "User Data", "Default"])
-        return root, root + _WIN_SEP + "Sessions"
     kind = current_os()
+    # Windows: infer from LOCALAPPDATA. Only honor LOCALAPPDATA on Windows so
+    # that a stray env var on macOS/Linux doesn't redirect us to a Windows-
+    # style path that doesn't exist.
+    if kind is OSKind.Windows:
+        win_local = e.get("LOCALAPPDATA")
+        if win_local:
+            root = _WIN_SEP.join([win_local, "Google", "Chrome", "User Data", "Default"])
+            return root, root + _WIN_SEP + "Sessions"
+        return None, None
     home = e.get("HOME") or os.path.expanduser("~")
     if kind is OSKind.MacOS:
         root = os.path.join(home, "Library", "Application Support", "Google", "Chrome", "Default")
@@ -157,4 +160,9 @@ def _chrome_user_data_paths(exe: str, e: dict[str, str]) -> tuple[str | None, st
         # Default guess (won't exist → caller logs missing_user_data).
         root = os.path.join(home, ".config", "google-chrome", "Default")
         return root, os.path.join(root, "Sessions")
+    # Fallback for unknown platform: honor LOCALAPPDATA if present.
+    win_local = e.get("LOCALAPPDATA")
+    if win_local:
+        root = _WIN_SEP.join([win_local, "Google", "Chrome", "User Data", "Default"])
+        return root, root + _WIN_SEP + "Sessions"
     return None, None
