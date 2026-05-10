@@ -49,7 +49,8 @@ def update_tab_nav_payload(tab_id: int, nav_index: int, url: str, title: str) ->
 
 def make_snss(version: int, commands: list[tuple[int, bytes]]) -> bytes:
     out = bytearray(SNSS_MAGIC + struct.pack("<I", version))
-    size_fmt = "<H" if version == 1 else "<I"
+    # SessionCommand::size_type is uint16_t for all SNSS versions (v1 + v3).
+    size_fmt = "<H"
     for cmd_id, payload in commands:
         body = bytes([cmd_id]) + payload
         out += struct.pack(size_fmt, len(body)) + body
@@ -119,7 +120,7 @@ def test_truncated_command_stops_cleanly(tmp_path: Path):
     payload = update_tab_nav_payload(1, 0, "https://ok/", "ok")
     snss = make_snss(3, [(CMD_UPDATE_TAB_NAVIGATION, payload)])
     # Append a size prefix promising 200 bytes, then provide nothing.
-    snss += struct.pack("<I", 200)
+    snss += struct.pack("<H", 200)
     tabs = read_snss_file(_write(tmp_path, "Tabs_4", snss))
     assert len(tabs) == 1
 
