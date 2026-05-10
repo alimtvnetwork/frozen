@@ -29,13 +29,16 @@ Phase 5+ stretch shipped:
   every command, popup behavior, restore semantics, disable/enable,
   uninstall, troubleshooting + exit-code table, privacy note.
 - 75 tests passing (unit + integration).
+- JSON log mode: `--log-json` flag + `IDLE_SHUTDOWN_LOG_JSON=1` env. New
+  `JsonFormatter` parses `event=key=val` tokens into structured fields and
+  preserves exception tracebacks. 78 tests passing.
+- `app/CONTRIBUTING.md` — dev loop, repo layout, code conventions, adding a
+  CLI command, release procedure, scoped-out items.
 
 Remaining stretch items (only if requested):
 - Tab-group decoding (kCommandSetTabGroup + kCommandTabGroupMetadataChanged2)
   → populate ChromeTab.GroupName. Wire layout shifted across Chromium
   milestones; needs SNSS fixtures from a real Windows Chrome profile.
 - Code signing (needs cert; out of scope).
-- Structured JSON logging mode (`--log-json`) for ops/Event Viewer correlation.
-- CONTRIBUTING.md for the dev loop.
 - Manual Windows x64 QA: run `app/build/build.ps1`, then `ISCC build\installer.iss`,
   then walk `app/ACCEPTANCE.md` Manual column.
