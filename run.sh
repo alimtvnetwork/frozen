@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Idle Shutdown — One-shot Build & Run (Bash, Linux/macOS)
-# Just run:  ./run.sh
-# It will: detect/install Python, create venv, install deps, run tests,
-#          and (on Windows via Git-Bash/WSL) build the .exe + installer.
-# Configure via run.config.json. No flags needed.
+# Usage:
+#   ./run.sh                  # first-run setup + tests, then auto-runs `init-db`
+#   ./run.sh simulate         # forwards to `idle-shutdown simulate` (auto-setup if needed)
+#   ./run.sh run              # `idle-shutdown run`
+#   ./run.sh <any subcmd ...> # any other CLI subcommand, args pass through
+#   ./run.sh --setup          # force re-run of setup + tests
+# The venv is created/reused automatically; you never need to `source` it.
 
 set -u
 
@@ -22,6 +25,11 @@ err()  { echo "${C_RED}ERROR:${C_RST} $*" >&2; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="$SCRIPT_DIR/run.config.json"
 [ -f "$CONFIG" ] || { err "run.config.json not found at $CONFIG"; exit 1; }
+
+# ---------- arg parsing ----------
+FORCE_SETUP=0
+if [ "${1:-}" = "--setup" ]; then FORCE_SETUP=1; shift; fi
+CLI_ARGS=("$@")  # everything else is forwarded to idle-shutdown
 
 # ---------- minimal JSON reader (python) ----------
 jget() { python3 -c "import json,sys;d=json.load(open('$CONFIG'));k='$1'.split('.');v=d
@@ -93,16 +101,32 @@ fi
 # shellcheck disable=SC1091
 . "$VENV_PATH/bin/activate" 2>/dev/null || . "$VENV_PATH/Scripts/activate"
 
-# ---------- install ----------
-log "Installing dependencies"
-( cd "$APP_PATH" && python -m pip install --upgrade pip >/dev/null && eval "$INSTALL_CMD" ) \
-  || { err "install failed"; exit 1; }
-ok "dependencies installed"
+# ---------- skip-setup fast path ----------
+# If the venv already has idle-shutdown installed AND the user just wants to
+# run a subcommand, skip the install/test phase. Use --setup to force.
+SKIP_SETUP=0
+if [ "$FORCE_SETUP" -eq 0 ] && [ "${#CLI_ARGS[@]}" -gt 0 ] && have idle-shutdown; then
+  SKIP_SETUP=1
+fi
 
-# ---------- test ----------
-log "Running tests"
-( cd "$APP_PATH" && eval "$TEST_CMD" ) || { err "tests failed"; exit 1; }
-ok "tests passed"
+if [ "$SKIP_SETUP" -eq 0 ]; then
+  # ---------- install ----------
+  log "Installing dependencies"
+  ( cd "$APP_PATH" && python -m pip install --upgrade pip >/dev/null && eval "$INSTALL_CMD" ) \
+    || { err "install failed"; exit 1; }
+  # macOS: install Quartz so real idle detection works (best-effort, optional).
+  if [ "$PLATFORM" = "macos" ]; then
+    python -m pip install --quiet pyobjc-framework-Quartz 2>/dev/null \
+      && ok "pyobjc-framework-Quartz installed (real idle detection enabled)" \
+      || warn "pyobjc-framework-Quartz install failed — `simulate` still works, `run` will use stub idle"
+  fi
+  ok "dependencies installed"
+
+  # ---------- test ----------
+  log "Running tests"
+  ( cd "$APP_PATH" && eval "$TEST_CMD" ) || { err "tests failed"; exit 1; }
+  ok "tests passed"
+fi
 
 # ---------- build (Windows only) ----------
 if [ "$PLATFORM" = "windows" ]; then
@@ -116,10 +140,35 @@ if [ "$PLATFORM" = "windows" ]; then
   else
     warn "Inno Setup (ISCC.exe) not found — skipping installer step"
   fi
-else
+elif [ "$SKIP_SETUP" -eq 0 ]; then
   warn "Windows .exe build skipped on $PLATFORM (logic verified by tests above)"
 fi
 
+# ---------- forward to CLI (or run init-db on first setup) ----------
+cd "$APP_PATH"
+if [ "${#CLI_ARGS[@]}" -gt 0 ]; then
+  log "${C_GRN}Running:${C_RST} idle-shutdown ${CLI_ARGS[*]}"
+  exec idle-shutdown "${CLI_ARGS[@]}"
+fi
+
+# No subcommand passed → first-time-friendly defaults.
+if [ ! -f "$HOME/.local/share/IdleShutdownRestore/IdleShutdown.db" ]; then
+  log "Initializing database"
+  idle-shutdown init-db || true
+fi
+
 log "${C_GRN}All done.${C_RST}"
-echo
-echo "Try the CLI:  source $VENV_DIR/bin/activate && cd $APP_DIR && idle-shutdown --help"
+cat <<EOF
+
+No more activating the venv. Just run:
+
+  ${C_CYA}./run.sh simulate${C_RST}                     full popup → countdown → dry-run shutdown
+  ${C_CYA}./run.sh simulate --no-popup${C_RST}          headless variant
+  ${C_CYA}./run.sh simulate --countdown 10${C_RST}      custom countdown
+  ${C_CYA}./run.sh run${C_RST}                          real idle monitor (Ctrl+C to stop)
+  ${C_CYA}./run.sh settings show${C_RST}                view config
+  ${C_CYA}./run.sh settings set-idle 1${C_RST}          set idle threshold to 1 min
+  ${C_CYA}./run.sh history${C_RST}                      shutdown history
+  ${C_CYA}./run.sh --help${C_RST}                       full CLI help
+  ${C_CYA}./run.sh --setup${C_RST}                      force re-install + re-run tests
+EOF
