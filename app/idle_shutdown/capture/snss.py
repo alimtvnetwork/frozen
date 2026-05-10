@@ -176,15 +176,12 @@ def _decode_update_tab_navigation(payload: bytes) -> tuple[int, _TabState] | Non
     try:
         outer = PickleReader(payload, skip_pickle_header=True)
         tab_id = outer.read_int32()
-        # Inner pickle: another length-prefixed blob.
-        inner_len = outer.read_int32()
-        if inner_len <= 0 or inner_len > outer.remaining():
-            return None
-        inner_bytes = outer._buf[outer._pos : outer._pos + inner_len]  # noqa: SLF001
-        inner = PickleReader(inner_bytes, skip_pickle_header=False)
-        nav_index = inner.read_int32()
-        url = inner.read_string()
-        title = inner.read_string16()
+        # Chromium writes SerializedNavigationEntry fields directly after the
+        # tab id; it is not a nested pickle/blob. We only need the first three
+        # fields for snapshot capture.
+        nav_index = outer.read_int32()
+        url = outer.read_string()
+        title = outer.read_string16()
         return tab_id, _TabState(nav_index=nav_index, url=url, title=title)
     except (EOFError, struct.error) as e:
         logger.debug("event=snss_decode_skip cmd=update_tab_navigation err=%s", e)
@@ -199,7 +196,7 @@ def read_snss_file(path: Path) -> list[ChromeTabInfo]:
             for cmd in _iter_commands(fh):
                 if cmd.command_id == CMD_INITIAL_STATE_MARKER:
                     continue
-                if cmd.command_id != CMD_UPDATE_TAB_NAVIGATION:
+                if cmd.command_id not in UPDATE_TAB_NAVIGATION_COMMAND_IDS:
                     continue
                 decoded = _decode_update_tab_navigation(cmd.payload)
                 if decoded is None:
