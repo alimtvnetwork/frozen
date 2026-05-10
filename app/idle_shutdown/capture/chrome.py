@@ -22,6 +22,7 @@ from typing import Callable
 _WIN_SEP = "\\"
 
 from idle_shutdown.config import REGISTRY_CHROME_APP_PATHS
+from idle_shutdown.platform import OSKind, current_os
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,22 @@ def detect_chrome_path(
         if base:
             candidates.append(_WIN_SEP.join([base, "Google", "Chrome", "Application", "chrome.exe"]))
 
+    # macOS / Linux fallbacks. Tests inject deterministic ``exists`` so these
+    # extra candidates are harmless on Windows.
+    if current_os() is OSKind.MacOS:
+        candidates += [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            os.path.expanduser("~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+        ]
+    elif current_os() is OSKind.Linux:
+        candidates += [
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/snap/bin/chromium",
+        ]
+
     for c in candidates:
         if c and exists(c):
             return c
@@ -98,14 +115,10 @@ def capture_chrome_session(
         logger.warning("event=chrome_not_detected reason=missing_exe")
         return ChromeSession(executable_path=None, windows=())
 
-    user_data_root = e.get("LOCALAPPDATA")
-    if not user_data_root:
+    sessions_root, sessions_dir = _chrome_user_data_paths(exe, e)
+    if not sessions_root:
         logger.warning("event=chrome_not_detected reason=missing_user_data")
         return ChromeSession(executable_path=exe, windows=())
-    sessions_root = _WIN_SEP.join(
-        [user_data_root, "Google", "Chrome", "User Data", "Default"]
-    )
-    sessions_dir = sessions_root + _WIN_SEP + "Sessions"
     if not exists(sessions_root):
         logger.warning("event=chrome_not_detected reason=missing_user_data")
         return ChromeSession(executable_path=exe, windows=())
@@ -119,3 +132,29 @@ def capture_chrome_session(
     except Exception as ex:  # noqa: BLE001
         logger.warning("event=chrome_snss_failed err=%s", ex)
         return ChromeSession(executable_path=exe, windows=())
+
+
+def _chrome_user_data_paths(exe: str, e: dict[str, str]) -> tuple[str | None, str | None]:
+    """Return ``(profile_root, sessions_dir)`` for the current OS or
+    ``(None, None)`` if the user-data dir cannot be determined."""
+    # Windows path inferred from LOCALAPPDATA (preserves prior behavior even
+    # if ``exe`` came from a non-Windows fallback — tests inject env).
+    win_local = e.get("LOCALAPPDATA")
+    if win_local:
+        root = _WIN_SEP.join([win_local, "Google", "Chrome", "User Data", "Default"])
+        return root, root + _WIN_SEP + "Sessions"
+    kind = current_os()
+    home = e.get("HOME") or os.path.expanduser("~")
+    if kind is OSKind.MacOS:
+        root = os.path.join(home, "Library", "Application Support", "Google", "Chrome", "Default")
+        return root, os.path.join(root, "Sessions")
+    if kind is OSKind.Linux:
+        # Try google-chrome first, then chromium.
+        for sub in ("google-chrome", "chromium"):
+            root = os.path.join(home, ".config", sub, "Default")
+            if os.path.exists(root):
+                return root, os.path.join(root, "Sessions")
+        # Default guess (won't exist → caller logs missing_user_data).
+        root = os.path.join(home, ".config", "google-chrome", "Default")
+        return root, os.path.join(root, "Sessions")
+    return None, None

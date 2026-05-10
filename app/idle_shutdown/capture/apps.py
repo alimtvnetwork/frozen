@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
+from idle_shutdown.platform import OSKind, current_os
+
 logger = logging.getLogger(__name__)
 
 SYSTEM_ROOTS = ("c:\\windows\\system32", "c:\\windows\\syswow64", "c:\\windows\\winsxs")
@@ -82,7 +84,12 @@ def _default_process_iter() -> Iterable[_ProcSnap]:  # pragma: no cover
 
 
 def _default_visible_pids() -> set[int]:  # pragma: no cover
-    if sys.platform != "win32":
+    kind = current_os()
+    if kind is OSKind.MacOS:
+        return _macos_visible_pids()
+    if kind is OSKind.Linux:
+        return _linux_visible_pids()
+    if kind is not OSKind.Windows:
         return set()
     import ctypes
     from ctypes import wintypes
@@ -99,6 +106,54 @@ def _default_visible_pids() -> set[int]:  # pragma: no cover
         return True
 
     user32.EnumWindows(EnumWindowsProc(_cb), 0)
+    return pids
+
+
+def _macos_visible_pids() -> set[int]:  # pragma: no cover
+    """Use Quartz CGWindowListCopyWindowInfo for on-screen, layer-0 windows."""
+    try:
+        from Quartz import (  # type: ignore
+            CGWindowListCopyWindowInfo,
+            kCGWindowListOptionOnScreenOnly,
+            kCGNullWindowID,
+        )
+    except Exception:
+        return set()
+    pids: set[int] = set()
+    try:
+        windows = CGWindowListCopyWindowInfo(
+            kCGWindowListOptionOnScreenOnly, kCGNullWindowID
+        ) or []
+        for w in windows:
+            if int(w.get("kCGWindowLayer", 1)) != 0:
+                continue  # skip menubar / dock layers
+            pid = w.get("kCGWindowOwnerPID")
+            if pid is not None:
+                pids.add(int(pid))
+    except Exception:
+        return set()
+    return pids
+
+
+def _linux_visible_pids() -> set[int]:  # pragma: no cover
+    """Parse ``wmctrl -lp`` for top-level visible window PIDs (X11)."""
+    import shutil as _sh
+    import subprocess
+    if not _sh.which("wmctrl"):
+        return set()
+    pids: set[int] = set()
+    try:
+        out = subprocess.check_output(["wmctrl", "-lp"], text=True, timeout=2)
+        for line in out.splitlines():
+            parts = line.split(None, 4)
+            if len(parts) < 5:
+                continue
+            try:
+                pids.add(int(parts[2]))
+            except ValueError:
+                continue
+    except Exception:
+        return set()
     return pids
 
 

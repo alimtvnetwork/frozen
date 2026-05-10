@@ -19,10 +19,12 @@ from dataclasses import dataclass
 from typing import Callable, Iterable
 
 from idle_shutdown.config import SHUTDOWN_COMMAND, WM_CLOSE_TIMEOUT_SECONDS
+from idle_shutdown.platform import current_os, OSKind, shutdown_command, is_dry_run_default
 
 logger = logging.getLogger(__name__)
 
-OWN_DENY_NAMES = {"explorer.exe", "idle-shutdown.exe"}
+OWN_DENY_NAMES = {"explorer.exe", "idle-shutdown.exe", "idle-shutdown",
+                  "Finder", "Dock", "SystemUIServer"}
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,8 @@ def execute_shutdown(
     run_command: Callable[[list[str]], int] | None = None,
     sleeper: Callable[[float], None] = time.sleep,
     own_pid: int | None = None,
+    command: list[str] | None = None,
+    dry_run: bool | None = None,
 ) -> int:
     """Run the locked shutdown sequence. Returns the ``shutdown.exe`` exit code."""
     vw = visible_windows or _default_visible_windows
@@ -88,16 +92,32 @@ def execute_shutdown(
     alive = pid_alive or _default_pid_alive
     run = run_command or (lambda cmd: subprocess.call(cmd))
     own = own_pid if own_pid is not None else os.getpid()
+    # Default command: keep the Windows constant when callers inject their
+    # own ``run_command`` (the test suite). For real callers on POSIX use the
+    # platform-native command.
+    if command is None:
+        if run_command is not None or current_os() is OSKind.Windows:
+            command = list(SHUTDOWN_COMMAND)
+        else:
+            command = shutdown_command()
+    if dry_run is None:
+        # If a custom run_command was injected (tests), default to NOT dry-run
+        # so test assertions on the invoked command still fire. Otherwise honor
+        # the platform default (dry-run on macOS/Linux unless forced).
+        dry_run = is_dry_run_default() if run_command is None else False
 
     pids_targeted: set[int] = set()
-    for w in vw():
-        if w.pid == own:
-            continue
-        if w.process_name.lower() in OWN_DENY_NAMES:
-            continue
-        pc(w.hwnd)
-        pids_targeted.add(w.pid)
-        logger.info("event=wm_close pid=%d name=%s", w.pid, w.process_name)
+    # WM_CLOSE step is Windows-specific; on POSIX we skip the per-window
+    # close (apps will be SIGTERM'd by the OS shutdown command itself).
+    if current_os() is OSKind.Windows or visible_windows is not None:
+        for w in vw():
+            if w.pid == own:
+                continue
+            if w.process_name.lower() in {n.lower() for n in OWN_DENY_NAMES}:
+                continue
+            pc(w.hwnd)
+            pids_targeted.add(w.pid)
+            logger.info("event=wm_close pid=%d name=%s", w.pid, w.process_name)
 
     deadline = time.monotonic() + WM_CLOSE_TIMEOUT_SECONDS
     while pids_targeted and time.monotonic() < deadline:
@@ -106,6 +126,9 @@ def execute_shutdown(
             break
         sleeper(0.25)
 
-    logger.info("event=shutdown_invoked cmd=%s", SHUTDOWN_COMMAND)
-    rc = run(list(SHUTDOWN_COMMAND))
+    if dry_run:
+        logger.info("event=shutdown_dry_run cmd=%s", command)
+        return 0
+    logger.info("event=shutdown_invoked cmd=%s", command)
+    rc = run(list(command))
     return int(rc)
