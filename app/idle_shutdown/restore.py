@@ -7,14 +7,26 @@ executable path AND the document path (case/normpath-insensitive).
 Runs are idempotent: a second invocation with the same snapshot must launch
 nothing. ``LastRestoredSnapshotId`` and ``LastRestoredAt`` settings are
 updated on completion.
+
+Per-desktop restore (Phase 5 stretch): apps captured on virtual desktop *N*
+are relaunched on virtual desktop *N*. Implementation:
+  1. ``ensure_desktops(N)`` creates missing virtual desktops up to N.
+  2. Apps are launched grouped by ``desktop_index``. Before each group we
+     ``switch_to_desktop(idx)`` so newly spawned top-level windows land
+     there; after spawn we additionally call ``move_to_desktop(pid, idx)``
+     to handle apps that pop their main window asynchronously.
+All three desktop callbacks are injectable; defaults use ``pyvda`` on Windows
+and no-op elsewhere so the test suite stays cross-platform.
 """
 from __future__ import annotations
 
 import logging
 import os
 import subprocess
+import time
 from dataclasses import dataclass
-from typing import Callable, Iterable
+from itertools import groupby
+from typing import Callable, Iterable, Optional
 
 from idle_shutdown.db.connection import connect, utc_now_iso
 from idle_shutdown.db.repos import SettingsRepo
@@ -122,9 +134,75 @@ def _default_live_processes() -> list[LiveProcess]:  # pragma: no cover
     return out
 
 
-def _ensure_desktops_default(_count: int) -> None:  # pragma: no cover
-    # MVP: pyvda will be wired in Phase 5 stretch. No-op keeps tests cross-platform.
-    return
+def _ensure_desktops_default(count: int) -> None:  # pragma: no cover
+    """Create virtual desktops until at least ``count`` exist. Win32 only."""
+    import sys
+    if sys.platform != "win32" or count <= 1:
+        return
+    try:
+        import pyvda  # type: ignore
+        existing = len(list(pyvda.get_virtual_desktops()))
+        for _ in range(max(0, count - existing)):
+            pyvda.VirtualDesktop.create()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("event=ensure_desktops_failed count=%d err=%s", count, e)
+
+
+def _switch_to_desktop_default(index: int) -> None:  # pragma: no cover
+    import sys
+    if sys.platform != "win32":
+        return
+    try:
+        import pyvda  # type: ignore
+        desktops = list(pyvda.get_virtual_desktops())
+        if 0 <= index < len(desktops):
+            desktops[index].go()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("event=switch_desktop_failed index=%d err=%s", index, e)
+
+
+def _move_to_desktop_default(pid: int, index: int) -> None:  # pragma: no cover
+    """Best-effort: poll briefly for a top-level window of ``pid`` and pin it."""
+    import sys
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        import pyvda  # type: ignore
+
+        desktops = list(pyvda.get_virtual_desktops())
+        if not (0 <= index < len(desktops)):
+            return
+        target = desktops[index]
+
+        user32 = ctypes.windll.user32
+        EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            found: list[int] = []
+
+            def _cb(hwnd, _lparam):
+                if not user32.IsWindowVisible(hwnd):
+                    return True
+                wpid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(wpid))
+                if int(wpid.value) == pid:
+                    found.append(int(hwnd))
+                return True
+
+            user32.EnumWindows(EnumWindowsProc(_cb), 0)
+            if found:
+                for hwnd in found:
+                    try:
+                        pyvda.AppView(hwnd=hwnd).move(target)
+                    except Exception:  # noqa: BLE001
+                        pass
+                return
+            time.sleep(0.1)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("event=move_desktop_failed pid=%d index=%d err=%s", pid, index, e)
 
 
 def _is_duplicate(app: AppRow, live: Iterable[LiveProcess]) -> bool:
@@ -153,13 +231,20 @@ def restore(
     snapshot_id: int | None = None,
     *,
     live_processes: Callable[[], list[LiveProcess]] | None = None,
-    spawn: Callable[[list[str], str | None], None] | None = None,
+    spawn: Callable[[list[str], str | None], Optional[int]] | None = None,
     ensure_desktops: Callable[[int], None] = _ensure_desktops_default,
+    switch_to_desktop: Callable[[int], None] = _switch_to_desktop_default,
+    move_to_desktop: Callable[[int, int], None] = _move_to_desktop_default,
     now_iso: Callable[[], str] = utc_now_iso,
 ) -> RestoreResult:
     data = _read_snapshot(snapshot_id)
     live_fn = live_processes or _default_live_processes
-    spawn_fn = spawn or (lambda argv, cwd: subprocess.Popen(argv, cwd=cwd))  # type: ignore[arg-type]
+
+    def _default_spawn(argv: list[str], cwd: str | None) -> Optional[int]:
+        proc = subprocess.Popen(argv, cwd=cwd)  # noqa: S603
+        return proc.pid
+
+    spawn_fn = spawn or _default_spawn
 
     logger.info("event=restore_started snapshot_id=%d apps=%d chrome_tabs=%d",
                 data.snapshot_id, len(data.apps), len(data.chrome_tabs))
@@ -167,22 +252,33 @@ def restore(
 
     live = list(live_fn())
     launched = skipped = 0
-    for app in data.apps:
-        if _is_duplicate(app, live):
-            logger.info("event=skip_relaunch exe=%s doc=%s reason=already_running",
-                        app.executable_path, app.document_path)
-            skipped += 1
-            continue
-        argv = [app.executable_path]
-        if app.document_path:
-            argv.append(app.document_path)
-        try:
-            spawn_fn(argv, app.working_directory)
-            launched += 1
-            logger.info("event=restore_item exe=%s status=launched", app.executable_path)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("event=restore_item exe=%s status=failed err=%s",
-                           app.executable_path, e)
+
+    # Group apps by target desktop so we switch once per desktop, preserving
+    # the original AppProcessId order within each group.
+    apps_sorted = sorted(enumerate(data.apps), key=lambda t: (t[1].desktop_index, t[0]))
+    for desk_idx, group in groupby(apps_sorted, key=lambda t: t[1].desktop_index):
+        group_apps = [a for _, a in group]
+        if data.desktop_count > 1:
+            switch_to_desktop(desk_idx)
+        for app in group_apps:
+            if _is_duplicate(app, live):
+                logger.info("event=skip_relaunch exe=%s doc=%s reason=already_running",
+                            app.executable_path, app.document_path)
+                skipped += 1
+                continue
+            argv = [app.executable_path]
+            if app.document_path:
+                argv.append(app.document_path)
+            try:
+                pid = spawn_fn(argv, app.working_directory)
+                launched += 1
+                logger.info("event=restore_item exe=%s desktop=%d status=launched",
+                            app.executable_path, desk_idx)
+                if pid is not None and data.desktop_count > 1:
+                    move_to_desktop(int(pid), desk_idx)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("event=restore_item exe=%s status=failed err=%s",
+                               app.executable_path, e)
 
     chrome_launched = False
     if data.chrome_executable:
