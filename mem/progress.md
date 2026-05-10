@@ -11,9 +11,15 @@ Phase 3 (snapshot capture: apps/chrome/desktops + orchestrator + `snapshot` CLI)
 Phase 4 (shutdown.py WM_CLOSE + locked shutdown.exe; autostart.py HKCU Run install/uninstall; restore.py with duplicate-prevention + idempotency markers; single_instance.py file-lock; wired `run` snapshot+shutdown, `restore`, `install-autostart`, `uninstall-autostart`. 63 unit tests passing.) — done
 Phase 5 (build/idle-shutdown.spec, build/version.txt VERSIONINFO, build/build.ps1 reproducible build, build/requirements.lock.README.md generation recipe, ACCEPTANCE.md walking all 11 criteria with code refs + auto vs manual coverage) — done
 
-MVP build complete. All 5 phases shipped; 63 unit tests passing.
-Remaining work is **manual Windows QA only** (run `app/build/build.ps1` on a
-Windows x64 box, then walk `app/ACCEPTANCE.md` Manual column).
-On future `next`: nothing pending unless the user reports QA findings or
-requests a stretch item (per-desktop restore, Chrome SNSS parsing for
-`GroupName`, code signing, installer).
+MVP build complete. All 5 phases shipped.
+
+Phase 5+ stretch shipped:
+- Per-desktop restore (lifts criterion 8 gap): `restore.py` now groups apps by
+  `desktop_index`, calls `ensure_desktops` / `switch_to_desktop` / `move_to_desktop`
+  (pyvda-backed defaults, fully injectable). 65 unit tests passing.
+
+Remaining stretch items (only if requested):
+- Chrome SNSS parsing → populate `SnapshotApps.GroupName` (lifts criterion 5 gap).
+- Code signing + SmartScreen reputation.
+- MSIX / Inno Setup installer.
+- Manual Windows x64 QA: run `app/build/build.ps1`, walk `app/ACCEPTANCE.md` Manual column.
