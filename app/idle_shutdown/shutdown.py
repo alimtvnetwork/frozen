@@ -92,9 +92,14 @@ def execute_shutdown(
     alive = pid_alive or _default_pid_alive
     run = run_command or (lambda cmd: subprocess.call(cmd))
     own = own_pid if own_pid is not None else os.getpid()
-    # Default command: keep Windows constant for backward-compat with tests.
+    # Default command: keep the Windows constant when callers inject their
+    # own ``run_command`` (the test suite). For real callers on POSIX use the
+    # platform-native command.
     if command is None:
-        command = list(SHUTDOWN_COMMAND) if current_os() is OSKind.Windows else shutdown_command()
+        if run_command is not None or current_os() is OSKind.Windows:
+            command = list(SHUTDOWN_COMMAND)
+        else:
+            command = shutdown_command()
     if dry_run is None:
         # If a custom run_command was injected (tests), default to NOT dry-run
         # so test assertions on the invoked command still fire. Otherwise honor
