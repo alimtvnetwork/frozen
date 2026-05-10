@@ -1,0 +1,2 @@
+[console_scripts]
+idle-shutdown = idle_shutdown.cli:main

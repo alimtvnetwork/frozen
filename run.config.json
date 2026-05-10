@@ -1,0 +1,16 @@
+{
+  "projectName": "Idle Shutdown",
+  "appDir": "app",
+  "pythonMin": "3.11",
+  "venvDir": ".venv",
+  "installCommand": "pip install -e .[dev]",
+  "testCommand": "python -m pytest -q",
+  "buildCommand": "pwsh -File build/build.ps1",
+  "installerCommand": "ISCC.exe build/installer.iss",
+  "cleanPaths": [".venv", "app/build/build", "app/build/dist", "app/dist", "app/.pytest_cache"],
+  "prerequisites": {
+    "python": true,
+    "pyinstaller": false,
+    "innoSetup": false
+  }
+}
