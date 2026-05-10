@@ -13,12 +13,19 @@ Standalone Windows Python utility. Code lives in `app/` (separate from this repo
 
 | Phase | Goal | Trigger |
 |---|---|---|
-| 0 | Full spec tree under `spec/21-app/` + this `plan.md` | done now |
+| 0 | Full spec tree under `spec/21-app/` + this `plan.md` | done |
+| 0.5 | Spec hardening: packaging, paths/exit codes, glossary, full test plan, locked Chrome + restore rules | done |
 | 1 | Project skeleton: `app/`, config, enums, SQLite schema, `init-db` CLI | `next` |
 | 2 | Activity monitor (GetLastInputInfo) + Tk popup + idle state machine | `next` |
 | 3 | Snapshot capture (apps, Chrome, virtual desktops) + log/counter | `next` |
 | 4 | Graceful shutdown + HKCU autostart + restore | `next` |
 | 5 | CLI polish (`click`) + walk the 11 acceptance criteria | `next` |
+
+## Locked decisions (do not revisit without explicit user request)
+1. Distribution: PyInstaller-frozen `idle-shutdown.exe` (single file).
+2. Restore duplicate-prevention: skip if same exe + same DocumentPath already running.
+3. Chrome detection: HKLM → HKCU → ProgramFiles → ProgramFiles(x86) → LOCALAPPDATA. Skip cleanly if absent.
+4. Test plan tier: full — unit + integration + manual QA checklist.
 
 ## MVP cut-lines (4–5h budget)
 
