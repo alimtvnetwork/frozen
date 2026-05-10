@@ -12,7 +12,7 @@ registry must be QA'd on Windows).
 | 2 | Idle detected within ±2s of threshold | `monitor.py` 1 Hz tick + `service.py` threshold dispatch | `tests/unit/test_monitor.py`, `test_service.py` | Set `IdleThresholdMinutes=1`, leave idle, time popup |
 | 3 | Always-on-top popup with countdown | `popup.py` Tk Toplevel `-topmost`, 250 ms tick | n/a (Tk is not headless-testable here) | Visual: popup is on top, countdown ticks, focus does not steal input from full-screen apps |
 | 4 | Yes resets / No or timeout shuts down | `service.py` `IdleService` state machine | `test_service.py` (yes / no / timeout / activity-during-prompt) | Click each button + let it time out |
-| 5 | Snapshot captures Chrome tabs, apps (path+cwd or doc), virtual desktops | `snapshot.py` + `capture/{apps,chrome,desktops}.py` | `test_snapshot.py`, `test_capture_apps.py`, `test_capture_chrome.py` | After `snapshot`, open SQLite, verify rows in `Snapshots`, `SnapshotApps`, `SnapshotChromeWindows`, `SnapshotChromeTabs`, `SnapshotDesktops`. **Known gap:** `SnapshotApps.GroupName` is always NULL (documented). |
+| 5 | Snapshot captures Chrome tabs, apps (path+cwd or doc), virtual desktops | `snapshot.py` + `capture/{apps,chrome,desktops,snss}.py` (SNSS framing + base::Pickle decoder for `kCommandUpdateTabNavigation`) | `test_snapshot.py`, `test_capture_apps.py`, `test_capture_chrome.py`, `test_snss.py` (synthetic v1 + v3 fixtures) | After `snapshot`, open SQLite, verify rows incl. real Chrome tab URLs/titles. **Remaining sub-gap:** `ChromeTab.GroupName` still NULL — tab-group commands deferred (need real-Windows fixtures). |
 | 6 | Counter + timestamped log per shutdown | `db/repos.py` `ShutdownCounterRepo`, `ShutdownLogRepo`; `snapshot.py` records on auto-trigger | `test_settings_repo.py`, `test_snapshot.py` (log row asserted) | Run `run`, force a shutdown path, then `idle-shutdown counter` / `history` |
 | 7 | Clean Windows shutdown, no orphans | `shutdown.py` (`WM_CLOSE` 5 s grace then `shutdown.exe /s /t 0 /f`) | `tests/unit/test_shutdown.py` (Win32 calls mocked) | Cold-boot test on Windows; check Event Viewer for clean stop |
 | 8 | Restore recreates desktops, relaunches apps, reopens Chrome tabs | `restore.py` + `--restore-last-session` Chrome flag; per-desktop routing via injectable `ensure_desktops` / `switch_to_desktop` / `move_to_desktop` (pyvda defaults) | `tests/unit/test_restore.py` incl. per-desktop switch + move + single-desktop skip | After auto-shutdown, log in, watch restore land each app on its original desktop |
@@ -57,5 +57,5 @@ reinstall.
 
 ## Documented MVP gaps (accepted)
 
-- `SnapshotApps.GroupName` always NULL (criterion 5).
+- `ChromeTab.GroupName` always NULL (tab-group SNSS commands deferred).
 - No code signing — SmartScreen warning expected on first launch.
