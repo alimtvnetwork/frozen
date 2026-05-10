@@ -110,6 +110,19 @@ if [ "$FORCE_SETUP" -eq 0 ] && have idle-shutdown; then
   ok "idle-shutdown already installed (use --setup to re-install)"
 fi
 
+# macOS: Quartz is required for real idle detection AND for the
+# visible-window enumeration used by the apps/chrome capture. Without it,
+# snapshots show apps=0 / chrome_tabs=0. Always make sure it's present —
+# this is a no-op once installed.
+if [ "$PLATFORM" = "macos" ]; then
+  if ! python -c "import Quartz" >/dev/null 2>&1; then
+    log "Installing pyobjc-framework-Quartz (needed for app/window capture on macOS)"
+    python -m pip install --quiet pyobjc-framework-Quartz \
+      && ok "pyobjc-framework-Quartz installed" \
+      || warn "pyobjc-framework-Quartz install failed — snapshots will show apps=0"
+  fi
+fi
+
 if [ "$SKIP_SETUP" -eq 0 ]; then
   # ---------- install ----------
   log "Installing dependencies"
