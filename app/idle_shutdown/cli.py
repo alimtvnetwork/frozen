@@ -126,14 +126,22 @@ def cmd_run(silent: bool) -> None:  # noqa: ARG001
     from idle_shutdown.monitor import IdleMonitor, get_default_idle_source
     from idle_shutdown.popup import show_popup
     from idle_shutdown.service import IdleService, ServiceCallbacks
+    from idle_shutdown.shutdown import execute_shutdown
+    from idle_shutdown.snapshot import take_snapshot
+    from idle_shutdown.enums import SnapshotTriggerKind
+    from idle_shutdown.single_instance import acquire_single_instance
 
     def _settings_provider(key: str):
         with connect() as conn:
             return SettingsRepo(conn).get(key)
 
     def _take_snapshot_and_shutdown() -> None:
-        # Phase 3/4 will wire the real implementation; for now log + exit popup.
-        click.echo("snapshot+shutdown wiring lands in Phase 3/4")
+        try:
+            take_snapshot(SnapshotTriggerKind.Auto, record_log=True)
+        except Exception as e:  # noqa: BLE001
+            click.echo(f"snapshot failed: {e}", err=True)
+            return
+        execute_shutdown()
 
     callbacks = ServiceCallbacks(
         show_popup=show_popup,
@@ -149,8 +157,9 @@ def cmd_run(silent: bool) -> None:  # noqa: ARG001
         on_threshold=service.on_threshold_reached,
         on_activity=service.on_activity_during_prompt,
     )
-    click.echo("idle monitor running (Ctrl+C to stop)")
-    monitor.run_forever()
+    with acquire_single_instance():
+        click.echo("idle monitor running (Ctrl+C to stop)")
+        monitor.run_forever()
 
 
 @cli.command("snapshot")
@@ -169,18 +178,34 @@ def cmd_snapshot() -> None:
 
 @cli.command("restore")
 @click.option("--snapshot-id", type=int, default=None)
-def cmd_restore(snapshot_id: Optional[int]) -> None:  # noqa: ARG001
-    raise click.ClickException("restore: implemented in Phase 4")
+def cmd_restore(snapshot_id: Optional[int]) -> None:
+    """Restore the latest (or given) snapshot."""
+    from idle_shutdown.restore import restore
+    from idle_shutdown.single_instance import acquire_single_instance
+
+    with acquire_single_instance():
+        result = restore(snapshot_id)
+    click.echo(
+        f"restored snapshot {result.snapshot_id}: "
+        f"launched={result.apps_launched} skipped={result.apps_skipped} "
+        f"chrome={'yes' if result.chrome_launched else 'no'}"
+    )
 
 
 @cli.command("install-autostart")
 def cmd_install_autostart() -> None:
-    raise click.ClickException("install-autostart: implemented in Phase 4")
+    """Write the HKCU Run entry so the service starts on login."""
+    from idle_shutdown.autostart import default_executable_path, install_autostart
+    cmd = install_autostart(default_executable_path())
+    click.echo(f"autostart installed: {cmd}")
 
 
 @cli.command("uninstall-autostart")
 def cmd_uninstall_autostart() -> None:
-    raise click.ClickException("uninstall-autostart: implemented in Phase 4")
+    """Remove the HKCU Run entry."""
+    from idle_shutdown.autostart import uninstall_autostart
+    uninstall_autostart()
+    click.echo("autostart uninstalled")
 
 
 @cli.command("disable")
