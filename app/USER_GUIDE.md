@@ -33,6 +33,9 @@ Two options.
 
 All commands accept `--verbose` for DEBUG logging and `--db PATH` to use a
 different SQLite file.
+Add `--log-json` (or set `IDLE_SHUTDOWN_LOG_JSON=1`) to write logs as one
+JSON object per line — easy to ingest into Event Viewer / OpenTelemetry / a
+log aggregator.
 
 | Command | What it does |
 |---|---|

@@ -24,15 +24,18 @@ err_console = Console(stderr=True)
 
 @click.group()
 @click.option("--verbose", "-v", is_flag=True, help="DEBUG-level logging.")
+@click.option("--log-json", "log_json", is_flag=True,
+              help="Emit logs as one JSON object per line (overrides IDLE_SHUTDOWN_LOG_JSON).")
 @click.option("--db", "db_override", type=click.Path(), default=None,
               help="Override DB path (also IDLE_SHUTDOWN_DB).")
 @click.pass_context
-def cli(ctx: click.Context, verbose: bool, db_override: Optional[str]) -> None:
+def cli(ctx: click.Context, verbose: bool, log_json: bool,
+        db_override: Optional[str]) -> None:
     """Idle Shutdown & Session Restore."""
     if db_override:
         import os
         os.environ["IDLE_SHUTDOWN_DB"] = db_override
-    setup_logging(verbose=verbose)
+    setup_logging(verbose=verbose, json_format=True if log_json else None)
     ctx.ensure_object(dict)
 
 
