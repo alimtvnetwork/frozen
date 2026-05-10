@@ -21,14 +21,21 @@ Phase 5+ stretch shipped:
 - SNSS reader: `capture/snss.py` — SNSS framing (v1 + v3) + base::Pickle
   primitive reader + `kCommandUpdateTabNavigation` decoder. Wired as default
   `snss_reader` in `capture_chrome_session`. Chrome tab capture moves from
-  "always empty" to "real URL+title list per latest Tabs_* file". 73 tests
-  passing (incl. v1, v3, multi-command latest-wins, bad magic, truncation,
-  latest-file selection).
+  "always empty" to "real URL+title list per latest Tabs_* file".
+- End-to-end CLI integration test: `tests/integration/test_cli_end_to_end.py`
+  drives `cli.main` through init-db → settings → snapshot → counter/history →
+  restore → enable/disable with mocked OS edges. Locks the full CLI contract.
+- End-user docs: `app/USER_GUIDE.md` — install (installer + single-exe),
+  every command, popup behavior, restore semantics, disable/enable,
+  uninstall, troubleshooting + exit-code table, privacy note.
+- 75 tests passing (unit + integration).
 
 Remaining stretch items (only if requested):
 - Tab-group decoding (kCommandSetTabGroup + kCommandTabGroupMetadataChanged2)
   → populate ChromeTab.GroupName. Wire layout shifted across Chromium
   milestones; needs SNSS fixtures from a real Windows Chrome profile.
 - Code signing (needs cert; out of scope).
+- Structured JSON logging mode (`--log-json`) for ops/Event Viewer correlation.
+- CONTRIBUTING.md for the dev loop.
 - Manual Windows x64 QA: run `app/build/build.ps1`, then `ISCC build\installer.iss`,
   then walk `app/ACCEPTANCE.md` Manual column.
