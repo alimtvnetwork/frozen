@@ -179,6 +179,62 @@ def cmd_snapshot() -> None:
     )
 
 
+@cli.command("simulate")
+@click.option("--countdown", type=click.IntRange(1, 120), default=5,
+              help="Override popup countdown seconds for this run.")
+@click.option("--no-popup", is_flag=True,
+              help="Skip the GUI popup (useful in headless CI).")
+@click.option("--force", is_flag=True,
+              help="Actually run the OS shutdown command (otherwise dry-run).")
+def cmd_simulate(countdown: int, no_popup: bool, force: bool) -> None:
+    """Pretend the user just went idle: show the popup, run the countdown,
+    then take a snapshot and invoke the shutdown step (dry-run by default
+    on macOS/Linux). Use this to test the full workflow without waiting."""
+    import os as _os
+    from idle_shutdown.popup import show_popup
+    from idle_shutdown.service import IdleService, ServiceCallbacks
+    from idle_shutdown.snapshot import take_snapshot
+    from idle_shutdown.shutdown import execute_shutdown
+    from idle_shutdown.enums import SnapshotTriggerKind
+
+    if force:
+        _os.environ["IDLE_SHUTDOWN_FORCE"] = "1"
+        _os.environ.pop("IDLE_SHUTDOWN_DRY_RUN", None)
+
+    def _take_snapshot_and_shutdown() -> None:
+        try:
+            res = take_snapshot(SnapshotTriggerKind.Auto, record_log=True)
+            click.echo(
+                f"simulated snapshot {res.snapshot_id}: apps={res.app_count} "
+                f"chrome_tabs={res.chrome_tab_count}"
+            )
+        except Exception as e:  # noqa: BLE001
+            click.echo(f"snapshot failed: {e}", err=True)
+            return
+        rc = execute_shutdown()
+        click.echo(f"shutdown step rc={rc}")
+
+    def _popup(secs, on_result):
+        if no_popup:
+            from idle_shutdown.enums import PopupResult
+            click.echo(f"(no-popup) auto-timeout in {secs}s")
+            import time as _t
+            _t.sleep(secs)
+            on_result(PopupResult.Timeout)
+        else:
+            show_popup(secs, on_result)
+
+    callbacks = ServiceCallbacks(
+        show_popup=_popup,
+        take_snapshot_and_shutdown=_take_snapshot_and_shutdown,
+        get_idle_threshold_minutes=lambda: 1,
+        get_popup_countdown_seconds=lambda: countdown,
+        get_service_enabled=lambda: True,
+    )
+    click.echo("simulating idle threshold reached…")
+    IdleService(callbacks).on_threshold_reached()
+
+
 @cli.command("restore")
 @click.option("--snapshot-id", type=int, default=None)
 def cmd_restore(snapshot_id: Optional[int]) -> None:
