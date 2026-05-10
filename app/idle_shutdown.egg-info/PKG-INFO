@@ -1,0 +1,16 @@
+Metadata-Version: 2.4
+Name: idle-shutdown
+Version: 0.1.0
+Summary: Idle Shutdown & Session Restore — Windows utility
+Requires-Python: >=3.11
+Requires-Dist: click>=8.1
+Requires-Dist: rich>=13.7
+Requires-Dist: psutil>=5.9
+Requires-Dist: pywin32>=306; sys_platform == "win32"
+Requires-Dist: pyvda>=0.4; sys_platform == "win32"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Requires-Dist: ruff>=0.5; extra == "dev"
+Requires-Dist: mypy>=1.10; extra == "dev"
+Requires-Dist: pyinstaller>=6.0; extra == "dev"
