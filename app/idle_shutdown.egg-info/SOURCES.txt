@@ -9,6 +9,7 @@ idle_shutdown/enums.py
 idle_shutdown/errors.py
 idle_shutdown/logging_setup.py
 idle_shutdown/monitor.py
+idle_shutdown/platform.py
 idle_shutdown/popup.py
 idle_shutdown/restore.py
 idle_shutdown/service.py
