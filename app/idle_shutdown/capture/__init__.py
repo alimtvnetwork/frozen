@@ -1,0 +1,1 @@
+"""Snapshot capture sub-package."""

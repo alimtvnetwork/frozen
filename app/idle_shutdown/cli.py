@@ -155,7 +155,16 @@ def cmd_run(silent: bool) -> None:  # noqa: ARG001
 
 @cli.command("snapshot")
 def cmd_snapshot() -> None:
-    raise click.ClickException("snapshot: implemented in Phase 3")
+    """Capture a session snapshot now (TriggerKind = Manual). Does NOT shut down."""
+    from idle_shutdown.enums import SnapshotTriggerKind
+    from idle_shutdown.snapshot import take_snapshot
+
+    result = take_snapshot(SnapshotTriggerKind.Manual, record_log=False)
+    click.echo(
+        f"snapshot {result.snapshot_id}: desktops={result.desktop_count} "
+        f"apps={result.app_count} chrome_windows={result.chrome_window_count} "
+        f"chrome_tabs={result.chrome_tab_count}"
+    )
 
 
 @cli.command("restore")
