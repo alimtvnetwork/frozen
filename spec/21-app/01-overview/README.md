@@ -12,6 +12,15 @@ Lightweight Windows desktop utility that detects user inactivity, prompts the us
 - **Virtual desktops**: `pyvda`
 - **Storage**: `sqlite3` (stdlib) — single source of truth
 - **Autostart**: `HKCU\...\Run` registry value via `winreg`
+- **Distribution**: PyInstaller-frozen single-file `idle-shutdown.exe`. No Python required on target machine.
+
+## Entrypoint (locked)
+The shipped artifact is `idle-shutdown.exe` (Windows x64). All commands in `08-cli-commands/` are invoked as `idle-shutdown.exe <command> [args]`. Source-tree development still works via `python -m idle_shutdown <command>`; both paths must produce identical behavior and exit codes.
+
+## Target environment
+- Windows 10 build 19041+ or Windows 11 (any build). x64 only.
+- Single user session. Multi-session/RDP not supported in MVP.
+- Standard user privileges sufficient. No admin rights required for any command.
 
 ## MVP scope (4–5h)
 Core flow first: idle detection → popup → snapshot → shutdown → restore. CLI commands wrap the same internals.
