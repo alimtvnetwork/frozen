@@ -42,6 +42,19 @@ pwsh -File build\build.ps1
 Output: `app\dist\idle-shutdown.exe` + a SHA256 line on stdout. Copy the exe
 to any folder, then `idle-shutdown.exe install-autostart` once.
 
+### Optional: signed-style installer
+
+After `build.ps1` succeeds, build the per-user installer with Inno Setup 6:
+
+```powershell
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" build\installer.iss
+```
+
+Output: `app\dist\IdleShutdownSetup-0.1.0.exe`. Installs to
+`%LOCALAPPDATA%\Programs\IdleShutdown`, optional autostart + init-db tasks,
+removes autostart on uninstall, preserves `%APPDATA%\IdleShutdown\` for
+reinstall.
+
 ## Documented MVP gaps (accepted)
 
 - `SnapshotApps.GroupName` always NULL (criterion 5).
