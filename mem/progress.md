@@ -14,12 +14,14 @@ Phase 5 (build/idle-shutdown.spec, build/version.txt VERSIONINFO, build/build.ps
 MVP build complete. All 5 phases shipped.
 
 Phase 5+ stretch shipped:
-- Per-desktop restore (lifts criterion 8 gap): `restore.py` now groups apps by
-  `desktop_index`, calls `ensure_desktops` / `switch_to_desktop` / `move_to_desktop`
-  (pyvda-backed defaults, fully injectable). 65 unit tests passing.
+- Per-desktop restore (lifts criterion 8 gap).
+- Inno Setup installer: `app/build/installer.iss` — per-user install,
+  optional autostart + init-db tasks, autostart removed on uninstall,
+  preserves %APPDATA%\IdleShutdown\ across reinstall. README updated.
 
 Remaining stretch items (only if requested):
-- Chrome SNSS parsing → populate `SnapshotApps.GroupName` (lifts criterion 5 gap).
-- Code signing + SmartScreen reputation.
-- MSIX / Inno Setup installer.
-- Manual Windows x64 QA: run `app/build/build.ps1`, walk `app/ACCEPTANCE.md` Manual column.
+- Chrome SNSS parsing → ChromeTab.GroupName (deep work: needs Chromium
+  base::Pickle decoder + real-Windows SNSS fixtures to validate; deferred).
+- Code signing (needs cert; out of scope).
+- Manual Windows x64 QA: run `app/build/build.ps1`, then `ISCC build\installer.iss`,
+  then walk `app/ACCEPTANCE.md` Manual column.
