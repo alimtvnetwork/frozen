@@ -108,11 +108,12 @@ else { Write-Warn2 "could not find $Activate — falling back to system python" 
 
 Push-Location $AppPath
 try {
-    # Skip install/test if the CLI is already on PATH and the user just wants
-    # to run a subcommand. Use -Setup to force re-install.
+    # Skip install/test if the CLI is already on PATH. Use -Setup to force
+    # a re-install + re-run of the test suite.
     $SkipSetup = $false
-    if (-not $Setup -and $CliArgs.Count -gt 0 -and (Test-Cmd "idle-shutdown")) {
+    if (-not $Setup -and (Test-Cmd "idle-shutdown")) {
         $SkipSetup = $true
+        Write-Ok "idle-shutdown already installed (use -Setup to re-install)"
     }
 
     if (-not $SkipSetup) {

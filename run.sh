@@ -102,11 +102,12 @@ fi
 . "$VENV_PATH/bin/activate" 2>/dev/null || . "$VENV_PATH/Scripts/activate"
 
 # ---------- skip-setup fast path ----------
-# If the venv already has idle-shutdown installed AND the user just wants to
-# run a subcommand, skip the install/test phase. Use --setup to force.
+# If the venv already has idle-shutdown installed, skip the install/test
+# phase on every subsequent run. Use --setup to force a re-install.
 SKIP_SETUP=0
-if [ "$FORCE_SETUP" -eq 0 ] && [ "${#CLI_ARGS[@]}" -gt 0 ] && have idle-shutdown; then
+if [ "$FORCE_SETUP" -eq 0 ] && have idle-shutdown; then
   SKIP_SETUP=1
+  ok "idle-shutdown already installed (use --setup to re-install)"
 fi
 
 if [ "$SKIP_SETUP" -eq 0 ]; then
