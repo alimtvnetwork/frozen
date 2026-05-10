@@ -45,6 +45,7 @@ def init_db(path: Path | None = None) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(target), isolation_level=None)
     try:
+        conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.execute("PRAGMA journal_mode = WAL;")
         conn.executescript(_read_schema())
