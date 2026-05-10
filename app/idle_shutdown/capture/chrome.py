@@ -111,8 +111,8 @@ def capture_chrome_session(
         return ChromeSession(executable_path=exe, windows=())
 
     if snss_reader is None:
-        # MVP: empty tab list; restore relies on Chrome's --restore-last-session.
-        return ChromeSession(executable_path=exe, windows=())
+        from idle_shutdown.capture.snss import default_snss_reader
+        snss_reader = default_snss_reader
     try:
         windows = snss_reader(Path(sessions_dir))
         return ChromeSession(executable_path=exe, windows=tuple(windows))
