@@ -177,5 +177,10 @@ def default_executable_path() -> str:
     """Best-effort path to the shipping exe, used when CLI invokes install."""
     if getattr(sys, "frozen", False):
         return sys.executable
-    # Dev path: ``python -m idle_shutdown``
+    # Dev path: prefer the venv ``idle-shutdown`` console script if present,
+    # otherwise fall back to ``python -m idle_shutdown``.
+    import shutil as _sh
+    found = _sh.which("idle-shutdown")
+    if found:
+        return found
     return f'{sys.executable} -m idle_shutdown'
