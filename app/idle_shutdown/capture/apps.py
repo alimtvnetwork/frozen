@@ -34,7 +34,8 @@ class AppInfo:
 
 
 def _norm(path: str) -> str:
-    return os.path.normcase(os.path.normpath(path))
+    """Lower-case + canonicalize separators. Cross-platform safe for tests."""
+    return os.path.normpath(path.replace("\\", os.sep)).lower()
 
 
 def _is_system_path(exe: str) -> bool:

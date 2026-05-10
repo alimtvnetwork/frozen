@@ -16,6 +16,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+# Force Windows-style paths in candidate strings so tests are deterministic on
+# any host. On Windows ``os.sep`` is already ``\\``; on POSIX we still emit
+# ``\\`` because Chrome paths are inherently Windows.
+_WIN_SEP = "\\"
+
 from idle_shutdown.config import REGISTRY_CHROME_APP_PATHS
 
 logger = logging.getLogger(__name__)
@@ -72,7 +77,7 @@ def detect_chrome_path(
     for env_var in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
         base = e.get(env_var)
         if base:
-            candidates.append(str(Path(base) / "Google" / "Chrome" / "Application" / "chrome.exe"))
+            candidates.append(_WIN_SEP.join([base, "Google", "Chrome", "Application", "chrome.exe"]))
 
     for c in candidates:
         if c and exists(c):
@@ -97,8 +102,11 @@ def capture_chrome_session(
     if not user_data_root:
         logger.warning("event=chrome_not_detected reason=missing_user_data")
         return ChromeSession(executable_path=exe, windows=())
-    sessions_dir = Path(user_data_root) / "Google" / "Chrome" / "User Data" / "Default" / "Sessions"
-    if not exists(str(sessions_dir.parent)):
+    sessions_root = _WIN_SEP.join(
+        [user_data_root, "Google", "Chrome", "User Data", "Default"]
+    )
+    sessions_dir = sessions_root + _WIN_SEP + "Sessions"
+    if not exists(sessions_root):
         logger.warning("event=chrome_not_detected reason=missing_user_data")
         return ChromeSession(executable_path=exe, windows=())
 
@@ -106,7 +114,7 @@ def capture_chrome_session(
         # MVP: empty tab list; restore relies on Chrome's --restore-last-session.
         return ChromeSession(executable_path=exe, windows=())
     try:
-        windows = snss_reader(sessions_dir)
+        windows = snss_reader(Path(sessions_dir))
         return ChromeSession(executable_path=exe, windows=tuple(windows))
     except Exception as ex:  # noqa: BLE001
         logger.warning("event=chrome_snss_failed err=%s", ex)
