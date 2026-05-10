@@ -30,3 +30,33 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+build/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# PyInstaller
+app/build/
+app/dist/
+*.spec
+
+# Idle Shutdown runtime data (local SQLite DB, logs, snapshots)
+IdleShutdownRestore/
