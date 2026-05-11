@@ -16,6 +16,7 @@ from idle_shutdown.config import SETTING_DEFS
 from idle_shutdown.db.connection import connect, init_db
 from idle_shutdown.db.repos import (
     SettingsRepo, ShutdownCounterRepo, ShutdownLogRepo, SnapshotReadRepo,
+    SnapshotRepo,
 )
 from idle_shutdown.errors import IdleShutdownError
 from idle_shutdown.logging_setup import setup_logging
@@ -414,6 +415,20 @@ def cmd_enable() -> None:
         repo.set("ServiceState", "Enabled")
         repo.set("DisabledUntil", "")
     click.echo("Service enabled")
+
+
+@cli.command("prune")
+@click.option("--keep", type=click.IntRange(1, 10000), default=None,
+              help="Override SnapshotKeepCount for this run.")
+def cmd_prune(keep: Optional[int]) -> None:
+    """Delete old snapshots, keeping only the most recent N."""
+    with connect() as conn:
+        if keep is None:
+            raw = SettingsRepo(conn).get("SnapshotKeepCount") or "50"
+            keep = int(raw)
+        deleted = SnapshotRepo(conn).prune(keep)
+        conn.commit()
+    click.echo(f"pruned {deleted} snapshot(s); kept newest {keep}")
 
 
 # ----- entrypoint with exit-code mapping ------------------------------------
