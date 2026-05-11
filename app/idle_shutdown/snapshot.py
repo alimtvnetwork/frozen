@@ -87,6 +87,7 @@ def take_snapshot(
             for prof in chrome.profiles:
                 profile_id = cap_repo.insert_chrome_profile(
                     snapshot_id, prof.profile_dir, prof.profile_name,
+                    browser_name=prof.browser_name,
                 )
                 for w_idx, win in enumerate(prof.windows):
                     cw_id = cap_repo.insert_chrome_window(
