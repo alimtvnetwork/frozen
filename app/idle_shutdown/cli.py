@@ -424,6 +424,80 @@ def cmd_enable() -> None:
     click.echo("Service enabled")
 
 
+# ----- diff ------------------------------------------------------------------
+
+
+@cli.command("diff")
+@click.argument("snapshot_a", type=int)
+@click.argument("snapshot_b", type=int)
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit the diff as JSON for piping.")
+def cmd_diff(snapshot_a: int, snapshot_b: int, as_json: bool) -> None:
+    """Compare two snapshots: apps and tabs added or removed."""
+    import json as _json
+    from idle_shutdown.diff import compute_snapshot_diff
+
+    with connect() as conn:
+        repo = SnapshotReadRepo(conn)
+        a = repo.get_detail(snapshot_a)
+        b = repo.get_detail(snapshot_b)
+    if a is None:
+        click.echo(f"snapshot {snapshot_a} not found", err=True); sys.exit(1)
+    if b is None:
+        click.echo(f"snapshot {snapshot_b} not found", err=True); sys.exit(1)
+
+    d = compute_snapshot_diff(a, b)
+
+    if as_json:
+        click.echo(_json.dumps({
+            "a": d.a_id, "b": d.b_id,
+            "apps_added": [x.__dict__ for x in d.apps_added],
+            "apps_removed": [x.__dict__ for x in d.apps_removed],
+            "tabs_added": [x.__dict__ for x in d.tabs_added],
+            "tabs_removed": [x.__dict__ for x in d.tabs_removed],
+        }, indent=2))
+        return
+
+    console.print(
+        f"[bold]Diff[/bold] #{d.a_id} → #{d.b_id}  "
+        f"apps:+{len(d.apps_added)}/-{len(d.apps_removed)}  "
+        f"tabs:+{len(d.tabs_added)}/-{len(d.tabs_removed)}"
+    )
+    if d.is_empty:
+        console.print("[dim]no changes[/dim]")
+        return
+
+    def _apps_table(title, rows):
+        t = Table(title=title)
+        t.add_column("Desktop", justify="right")
+        t.add_column("Executable", overflow="fold")
+        t.add_column("Document", overflow="fold")
+        for r in rows:
+            t.add_row(str(r.desktop_index), r.executable_path, r.document_path or "")
+        return t
+
+    def _tabs_table(title, rows):
+        t = Table(title=title)
+        t.add_column("Browser")
+        t.add_column("Profile")
+        t.add_column("Title", overflow="fold", max_width=40)
+        t.add_column("URL", overflow="fold", max_width=70)
+        for r in rows:
+            t.add_row(r.browser_name or "-",
+                      r.profile_name or r.profile_dir or "-",
+                      r.title, r.url)
+        return t
+
+    if d.apps_added:
+        console.print(_apps_table("Apps added (in B, not in A)", d.apps_added))
+    if d.apps_removed:
+        console.print(_apps_table("Apps removed (in A, not in B)", d.apps_removed))
+    if d.tabs_added:
+        console.print(_tabs_table("Tabs added", d.tabs_added))
+    if d.tabs_removed:
+        console.print(_tabs_table("Tabs removed", d.tabs_removed))
+
+
 @cli.command("prune")
 @click.option("--keep", type=click.IntRange(1, 10000), default=None,
               help="Override SnapshotKeepCount for this run.")
