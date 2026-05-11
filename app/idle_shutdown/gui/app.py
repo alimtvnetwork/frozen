@@ -575,15 +575,17 @@ class DashboardPanel(_PanelBase):  # pragma: no cover - GUI
         # Live countdown — bound to win.remaining_var, updated every 1s.
         self._var_card(cards, "Time until prompt",
                        self.win.remaining_var, col=1)
-        self._var_card(cards, "Idle for",
-                       self.win.idle_var, col=2)
+        self._var_card(cards, "Guard status",
+                       self.win.busy_reason_var, col=2)
 
         for c in range(3):
             cards.columnconfigure(c, weight=1, uniform="cards")
 
-        # Second row: counters
+        # Second row: idle timer + counters
         cards2 = ttk.Frame(wrap, style="Panel.TFrame")
         cards2.pack(fill="x", pady=(0, 16), **pad)
+        self._var_card(cards2, "Idle for",
+                       self.win.idle_var, col=2)
         try:
             with connect() as conn:
                 total = ShutdownCounterRepo(conn).total()
@@ -593,7 +595,7 @@ class DashboardPanel(_PanelBase):  # pragma: no cover - GUI
         self._card(cards2, "Total auto-shutdowns", str(total), "Big.TLabel", col=0)
         self._card(cards2, "Latest snapshot",
                    f"#{last_id}" if last_id else "—", "Big.TLabel", col=1)
-        for c in range(2):
+        for c in range(3):
             cards2.columnconfigure(c, weight=1, uniform="cards2")
 
         # Settings summary
