@@ -1,10 +1,8 @@
 # Project Memory
 
 ## Core
-Spec lives in `spec/21-app/`. Implementation lives in `app/` (separate from the TanStack web stack in `src/`). Plan in `plan.md`.
-Build phases: 1 done; remaining 2 (monitor+popup), 3 (capture), 4 (shutdown+autostart+restore), 5 (CLI polish + tests).
-Locked decisions: PyInstaller frozen .exe; restore skips when same exe + same DocumentPath running; Chrome auto-detect via registry then Program Files, skip if absent; full test plan (unit + integration + manual QA).
-Always list remaining tasks at end of each reply; reload from this memory on `next`.
+After every implementation step, list remaining tasks/phases. On future `next` commands, recall the plan from .lovable/plan.md or memory and suggest the next phase.
+Idle Shutdown app is Python (app/), not the React frontend. All work happens under app/.
 
 ## Memories
-- [Phase progress](mem://progress) — which build phase is complete and what comes next
+- [Plan phases](mem://features/plan-phases) — Phase 1 (dry-run) ✅, Phase 2 (activity guard) ✅, Phase 3 (multi-profile Chrome) ✅, Phase 4 (inspector CLI) ✅, Phase 5 (flip dry-run off, deferred).

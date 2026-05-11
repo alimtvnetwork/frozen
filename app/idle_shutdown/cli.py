@@ -14,7 +14,9 @@ from rich.table import Table
 
 from idle_shutdown.config import SETTING_DEFS
 from idle_shutdown.db.connection import connect, init_db
-from idle_shutdown.db.repos import SettingsRepo, ShutdownCounterRepo, ShutdownLogRepo
+from idle_shutdown.db.repos import (
+    SettingsRepo, ShutdownCounterRepo, ShutdownLogRepo, SnapshotReadRepo,
+)
 from idle_shutdown.errors import IdleShutdownError
 from idle_shutdown.logging_setup import setup_logging
 
@@ -117,6 +119,89 @@ def cmd_history(limit: int) -> None:
     for r in rows:
         table.add_row(r.occurred_at, r.outcome, "" if r.snapshot_id is None else str(r.snapshot_id))
     console.print(table)
+
+
+# ----- show ------------------------------------------------------------------
+
+
+@cli.command("show")
+@click.option("--snapshot-id", type=int, default=None,
+              help="Inspect a specific snapshot. Defaults to the latest.")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit the snapshot detail as JSON for piping.")
+@click.option("--max-tabs", type=click.IntRange(1, 10000), default=200,
+              help="Truncate the tab table to this many rows in human view.")
+def cmd_show(snapshot_id: Optional[int], as_json: bool, max_tabs: int) -> None:
+    """Print a saved snapshot: apps, Chrome profiles, windows, tabs."""
+    import json as _json
+    with connect() as conn:
+        repo = SnapshotReadRepo(conn)
+        sid = snapshot_id if snapshot_id is not None else repo.latest_id()
+        if sid is None:
+            click.echo("no snapshots found", err=True)
+            sys.exit(1)
+        detail = repo.get_detail(sid)
+    if detail is None:
+        click.echo(f"snapshot {sid} not found", err=True)
+        sys.exit(1)
+
+    if as_json:
+        click.echo(_json.dumps({
+            "snapshot_id": detail.snapshot_id,
+            "created_at": detail.created_at,
+            "trigger": detail.trigger,
+            "desktop_count": detail.desktop_count,
+            "apps": [a.__dict__ for a in detail.apps],
+            "profiles": [
+                {"profile_dir": d, "profile_name": n, "tab_count": c}
+                for d, n, c in detail.profile_summary
+            ],
+            "tabs": [t.__dict__ for t in detail.tabs],
+        }, indent=2))
+        return
+
+    console.print(
+        f"[bold]Snapshot #{detail.snapshot_id}[/bold]  "
+        f"trigger={detail.trigger}  created={detail.created_at}  "
+        f"desktops={detail.desktop_count}  apps={len(detail.apps)}  "
+        f"profiles={len(detail.profile_summary)}  tabs={len(detail.tabs)}"
+    )
+
+    apps_table = Table(title="Applications", show_lines=False)
+    apps_table.add_column("Desktop", justify="right")
+    apps_table.add_column("Executable", overflow="fold")
+    apps_table.add_column("CWD", overflow="fold")
+    apps_table.add_column("Document", overflow="fold")
+    for a in detail.apps:
+        apps_table.add_row(
+            str(a.desktop_index), a.executable_path,
+            a.working_directory or "", a.document_path or "",
+        )
+    console.print(apps_table)
+
+    if detail.profile_summary:
+        prof_table = Table(title="Chrome profiles")
+        prof_table.add_column("ProfileDir")
+        prof_table.add_column("Name")
+        prof_table.add_column("Tabs", justify="right")
+        for d, n, c in detail.profile_summary:
+            prof_table.add_row(d, n, str(c))
+        console.print(prof_table)
+
+    if detail.tabs:
+        tabs_table = Table(title=f"Tabs (showing first {min(max_tabs, len(detail.tabs))} of {len(detail.tabs)})")
+        tabs_table.add_column("Profile")
+        tabs_table.add_column("Win", justify="right")
+        tabs_table.add_column("Idx", justify="right")
+        tabs_table.add_column("Title", overflow="fold", max_width=40)
+        tabs_table.add_column("URL", overflow="fold", max_width=70)
+        for t in detail.tabs[:max_tabs]:
+            tabs_table.add_row(
+                t.profile_name or t.profile_dir or "-",
+                str(t.window_index), str(t.tab_index),
+                t.title, t.url,
+            )
+        console.print(tabs_table)
 
 
 # ----- placeholders for later phases ----------------------------------------
