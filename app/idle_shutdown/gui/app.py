@@ -204,13 +204,16 @@ class _MainWindow:  # pragma: no cover - GUI
         self._idle_source = None  # built lazily on the main thread
         self._service = None
         self._monitor = None
+        self._activity_guard = None
         self._popup_win = None  # active in-window countdown popup, if any
+        self._popup_state = None
 
         # Live status vars — Dashboard binds to these so the countdown
         # updates every second without rebuilding the panel.
         self.idle_var = tk.StringVar(value="—")
         self.remaining_var = tk.StringVar(value="—")
         self.monitor_state_var = tk.StringVar(value="Stopped")
+        self.busy_reason_var = tk.StringVar(value="—")
 
         # Layout: sidebar (left) + content (right)
         self.sidebar = ttk.Frame(root, style="Sidebar.TFrame", width=220)
@@ -321,6 +324,23 @@ class _MainWindow:  # pragma: no cover - GUI
         except Exception:  # noqa: BLE001
             return 60_000
 
+    def _busy_label(self, reason: str | None) -> str:
+        labels = {
+            "audio_playing": "Media playing",
+            "mic_active": "Call or microphone active",
+            "camera_active": "Camera active",
+            "fullscreen": "Fullscreen app active",
+        }
+        return labels.get(reason or "", "Busy")
+
+    def _read_busy_state(self) -> tuple[bool, str | None]:
+        if self._activity_guard is None:
+            return False, None
+        try:
+            return self._activity_guard.is_busy()
+        except Exception:  # noqa: BLE001
+            return False, None
+
     @staticmethod
     def _fmt_ms(ms: int) -> str:
         s = max(0, ms // 1000)
@@ -338,16 +358,27 @@ class _MainWindow:  # pragma: no cover - GUI
         if self._monitor_running and self._monitor is not None:
             idle_ms = self._read_idle_ms()
             threshold = self._threshold_ms()
-            remaining = max(0, threshold - idle_ms)
-            self.idle_var.set(self._fmt_ms(idle_ms))
-            self.remaining_var.set(self._fmt_ms(remaining))
             try:
                 self._monitor.tick()
             except Exception:  # noqa: BLE001
                 logger.exception("monitor tick failed")
+            busy = bool(getattr(self._monitor, "busy", False))
+            busy_reason = getattr(self._monitor, "busy_reason", None)
+            if busy:
+                self._close_popup()
+                self.idle_var.set("Paused")
+                self.remaining_var.set("Paused")
+                self.busy_reason_var.set(self._busy_label(busy_reason))
+            else:
+                effective_idle_ms = int(getattr(self._monitor, "last_effective_idle_ms", idle_ms))
+                remaining = max(0, threshold - effective_idle_ms)
+                self.idle_var.set(self._fmt_ms(effective_idle_ms))
+                self.remaining_var.set(self._fmt_ms(remaining))
+                self.busy_reason_var.set("—")
         else:
             self.idle_var.set("—")
             self.remaining_var.set("Not running")
+            self.busy_reason_var.set("—")
         self._heartbeat_job = self.root.after(1000, self._heartbeat_tick)
 
     def _start_monitor(self) -> None:
@@ -357,6 +388,7 @@ class _MainWindow:  # pragma: no cover - GUI
         from idle_shutdown.service import IdleService, ServiceCallbacks
         from idle_shutdown.snapshot import take_snapshot
         from idle_shutdown.enums import SnapshotTriggerKind
+        from idle_shutdown.activity_guard import ActivityGuard, GuardConfig
         from tkinter import messagebox
 
         def _take_snapshot_and_shutdown() -> None:
@@ -380,11 +412,20 @@ class _MainWindow:  # pragma: no cover - GUI
             get_service_enabled=lambda: _get_setting("ServiceState") == "Enabled",
         )
         self._service = IdleService(callbacks)
+        def _guard_cfg() -> GuardConfig:
+            return GuardConfig(
+                mic_enabled=str(_get_setting("GuardMicEnabled")).lower() == "true",
+                audio_enabled=str(_get_setting("GuardAudioEnabled")).lower() == "true",
+                fullscreen_enabled=str(_get_setting("GuardFullscreenEnabled")).lower() == "true",
+                camera_enabled=str(_get_setting("GuardCameraEnabled")).lower() == "true",
+            )
+        self._activity_guard = ActivityGuard(_guard_cfg)
         self._monitor = IdleMonitor(
             source=self._ensure_idle_source(),
             threshold_ms_provider=self._service.threshold_ms,
             on_threshold=self._service.on_threshold_reached,
             on_activity=self._service.on_activity_during_prompt,
+            is_busy=self._read_busy_state,
         )
         self._monitor_running = True
         logger.info("event=gui_monitor_started")
@@ -393,12 +434,23 @@ class _MainWindow:  # pragma: no cover - GUI
         self._monitor_running = False
         self._monitor = None
         self._service = None
+        self._activity_guard = None
         self._close_popup()
         logger.info("event=gui_monitor_stopped")
 
     # ---------- in-window popup (main-thread safe) ----------
 
     def _close_popup(self) -> None:
+        state = self._popup_state
+        if state is not None:
+            state["done"] = True
+            after = state.get("after")
+            if after and self._popup_win is not None:
+                try:
+                    self._popup_win.after_cancel(after)
+                except Exception:  # noqa: BLE001
+                    pass
+            self._popup_state = None
         if self._popup_win is not None:
             try:
                 self._popup_win.destroy()
@@ -429,6 +481,7 @@ class _MainWindow:  # pragma: no cover - GUI
 
         state = {"remaining_ms": int(countdown_seconds) * 1000,
                  "done": False, "after": None}
+        self._popup_state = state
 
         tk.Label(win, text="Are you still at your desk?",
                  bg=COLORS["panel"], fg=COLORS["fg"],
@@ -441,6 +494,7 @@ class _MainWindow:  # pragma: no cover - GUI
             if state["done"]:
                 return
             state["done"] = True
+            self._popup_state = None
             if state["after"]:
                 try:
                     win.after_cancel(state["after"])
@@ -536,15 +590,17 @@ class DashboardPanel(_PanelBase):  # pragma: no cover - GUI
         # Live countdown — bound to win.remaining_var, updated every 1s.
         self._var_card(cards, "Time until prompt",
                        self.win.remaining_var, col=1)
-        self._var_card(cards, "Idle for",
-                       self.win.idle_var, col=2)
+        self._var_card(cards, "Guard status",
+                       self.win.busy_reason_var, col=2)
 
         for c in range(3):
             cards.columnconfigure(c, weight=1, uniform="cards")
 
-        # Second row: counters
+        # Second row: idle timer + counters
         cards2 = ttk.Frame(wrap, style="Panel.TFrame")
         cards2.pack(fill="x", pady=(0, 16), **pad)
+        self._var_card(cards2, "Idle for",
+                       self.win.idle_var, col=2)
         try:
             with connect() as conn:
                 total = ShutdownCounterRepo(conn).total()
@@ -554,7 +610,7 @@ class DashboardPanel(_PanelBase):  # pragma: no cover - GUI
         self._card(cards2, "Total auto-shutdowns", str(total), "Big.TLabel", col=0)
         self._card(cards2, "Latest snapshot",
                    f"#{last_id}" if last_id else "—", "Big.TLabel", col=1)
-        for c in range(2):
+        for c in range(3):
             cards2.columnconfigure(c, weight=1, uniform="cards2")
 
         # Settings summary

@@ -98,11 +98,38 @@ def test_busy_guard_suppresses_threshold_fire():
     mon.tick()
     assert rec.threshold == 0
     assert mon.prompting is False
+    assert mon.busy is True
+    assert mon.busy_reason == "mic_active"
+    assert mon.last_effective_idle_ms == 0
 
 
 def test_busy_guard_releases_when_no_longer_busy():
     src = StubIdleSource(60_000)
     busy = {"v": True}
+    now = {"v": 0.0}
+    rec = _Recorder()
+    mon = IdleMonitor(
+        source=src,
+        threshold_ms_provider=lambda: 60_000,
+        on_threshold=lambda: setattr(rec, "threshold", rec.threshold + 1),
+        on_activity=lambda: setattr(rec, "activity", rec.activity + 1),
+        is_busy=lambda: (busy["v"], "audio_playing" if busy["v"] else None),
+        clock=lambda: now["v"],
+    )
+    mon.tick()
+    assert rec.threshold == 0
+    busy["v"] = False
+    mon.tick()
+    assert rec.threshold == 0
+    assert mon.last_effective_idle_ms == 0
+    now["v"] = 60.0
+    mon.tick()
+    assert rec.threshold == 1
+
+
+def test_busy_guard_closes_existing_prompt():
+    src = StubIdleSource(60_000)
+    busy = {"v": False}
     rec = _Recorder()
     mon = IdleMonitor(
         source=src,
@@ -112,7 +139,8 @@ def test_busy_guard_releases_when_no_longer_busy():
         is_busy=lambda: (busy["v"], "audio_playing" if busy["v"] else None),
     )
     mon.tick()
-    assert rec.threshold == 0
-    busy["v"] = False
+    assert mon.prompting is True
+    busy["v"] = True
     mon.tick()
-    assert rec.threshold == 1
+    assert mon.prompting is False
+    assert rec.activity == 1
