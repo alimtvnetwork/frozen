@@ -2,11 +2,14 @@ README.md
 pyproject.toml
 idle_shutdown/__init__.py
 idle_shutdown/__main__.py
+idle_shutdown/activity_guard.py
 idle_shutdown/autostart.py
 idle_shutdown/cli.py
 idle_shutdown/config.py
+idle_shutdown/diff.py
 idle_shutdown/enums.py
 idle_shutdown/errors.py
+idle_shutdown/export.py
 idle_shutdown/logging_setup.py
 idle_shutdown/monitor.py
 idle_shutdown/platform.py
@@ -31,3 +34,5 @@ idle_shutdown/db/__init__.py
 idle_shutdown/db/connection.py
 idle_shutdown/db/repos.py
 idle_shutdown/db/schema.sql
+idle_shutdown/gui/__init__.py
+idle_shutdown/gui/app.py
