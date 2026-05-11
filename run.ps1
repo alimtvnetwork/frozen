@@ -189,6 +189,11 @@ try {
         Write-Step "Initializing database"
         & idle-shutdown init-db
     }
+
+    if ($Install) {
+        Write-Ok "Install complete. Run .\run.ps1 -d to launch the GUI."
+        exit 0
+    }
 }
 finally { Pop-Location }
 
@@ -205,3 +210,5 @@ Write-Host "  .\run.ps1 settings set-idle 1        " -ForegroundColor Cyan -NoNe
 Write-Host "  .\run.ps1 history                    " -ForegroundColor Cyan -NoNewline; Write-Host "shutdown history"
 Write-Host "  .\run.ps1 --help                     " -ForegroundColor Cyan -NoNewline; Write-Host "full CLI help"
 Write-Host "  .\run.ps1 -Setup                     " -ForegroundColor Cyan -NoNewline; Write-Host "force re-install + re-run tests"
+Write-Host "  .\run.ps1 -i                         " -ForegroundColor Cyan -NoNewline; Write-Host "install / refresh dependencies"
+Write-Host "  .\run.ps1 -d                         " -ForegroundColor Cyan -NoNewline; Write-Host "deploy: launch the desktop UI"
