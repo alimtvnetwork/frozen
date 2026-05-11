@@ -41,6 +41,49 @@ SECTIONS = [
 ]
 
 
+# ---------- cross-platform colored "button" --------------------------------
+#
+# tk.Button on macOS ignores ``bg`` / ``fg`` (Aqua paints a native white
+# button), which leaves our white text unreadable. A tk.Label with click
+# bindings honors colors on every platform, so we use it for every colored
+# action button in the app.
+
+
+def _make_button(parent, *, text: str, bg: str, fg: str, hover_bg: str,
+                 command, font=("Helvetica", 11, "bold"),
+                 padx: int = 16, pady: int = 10):
+    import tkinter as tk
+
+    lbl = tk.Label(
+        parent, text=text, bg=bg, fg=fg, font=font,
+        padx=padx, pady=pady, cursor="hand2", anchor="center",
+    )
+    lbl._bg = bg            # type: ignore[attr-defined]
+    lbl._hover_bg = hover_bg  # type: ignore[attr-defined]
+
+    def _enter(_e):
+        lbl.configure(bg=lbl._hover_bg)  # type: ignore[attr-defined]
+
+    def _leave(_e):
+        lbl.configure(bg=lbl._bg)  # type: ignore[attr-defined]
+
+    def _click(_e):
+        if command:
+            command()
+
+    lbl.bind("<Enter>", _enter)
+    lbl.bind("<Leave>", _leave)
+    lbl.bind("<Button-1>", _click)
+    return lbl
+
+
+def _set_button_colors(btn, *, text: str, bg: str, hover_bg: str,
+                       fg: str = "#ffffff") -> None:
+    btn.configure(text=text, bg=bg, fg=fg)
+    btn._bg = bg          # type: ignore[attr-defined]
+    btn._hover_bg = hover_bg  # type: ignore[attr-defined]
+
+
 # ---------- helpers ---------------------------------------------------------
 
 
