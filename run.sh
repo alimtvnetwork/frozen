@@ -6,6 +6,8 @@
 #   ./run.sh run              # `idle-shutdown run`
 #   ./run.sh <any subcmd ...> # any other CLI subcommand, args pass through
 #   ./run.sh --setup          # force re-run of setup + tests
+#   ./run.sh -i               # install/refresh dependencies only (no tests, no run)
+#   ./run.sh -d               # deploy: install if needed, then launch the GUI window
 # The venv is created/reused automatically; you never need to `source` it.
 
 set -u
@@ -28,8 +30,17 @@ CONFIG="$SCRIPT_DIR/run.config.json"
 
 # ---------- arg parsing ----------
 FORCE_SETUP=0
+INSTALL_ONLY=0
+DEPLOY_GUI=0
 if [ "${1:-}" = "--setup" ]; then FORCE_SETUP=1; shift; fi
+if [ "${1:-}" = "-i" ] || [ "${1:-}" = "--install" ]; then INSTALL_ONLY=1; FORCE_SETUP=1; shift; fi
+if [ "${1:-}" = "-d" ] || [ "${1:-}" = "--deploy" ]; then DEPLOY_GUI=1; shift; fi
 CLI_ARGS=("$@")  # everything else is forwarded to idle-shutdown
+
+# -d implies: launch the GUI after setup
+if [ "$DEPLOY_GUI" = "1" ]; then
+  CLI_ARGS=("gui")
+fi
 
 # ---------- minimal JSON reader (python) ----------
 jget() { python3 -c "import json,sys;d=json.load(open('$CONFIG'));k='$1'.split('.');v=d
