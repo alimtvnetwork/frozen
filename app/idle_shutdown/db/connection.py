@@ -51,6 +51,7 @@ def init_db(path: Path | None = None) -> Path:
         conn.executescript(_read_schema())
         # Additive migrations for DBs created before Phase 3.
         _migrate_chrome_profile(conn)
+        _migrate_chrome_profile_browser(conn)
         now = utc_now_iso()
         # Seed default settings (idempotent)
         for s in SETTING_DEFS:
@@ -80,3 +81,12 @@ def _migrate_chrome_profile(conn: sqlite3.Connection) -> None:
         # an existing table; we add the column without the FK. Snapshot
         # writes still go through CaptureRepo and remain consistent.
         conn.execute("ALTER TABLE ChromeWindow ADD COLUMN ChromeProfileId INTEGER")
+
+
+def _migrate_chrome_profile_browser(conn: sqlite3.Connection) -> None:
+    """Backfill ``ChromeProfile.BrowserName`` for the Chromium-variants feature."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(ChromeProfile)").fetchall()}
+    if "BrowserName" not in cols:
+        conn.execute(
+            "ALTER TABLE ChromeProfile ADD COLUMN BrowserName TEXT NOT NULL DEFAULT 'Chrome'"
+        )
