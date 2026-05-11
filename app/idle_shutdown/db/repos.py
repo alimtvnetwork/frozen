@@ -196,3 +196,127 @@ class CaptureRepo:
             "VALUES (?, ?, ?, ?, ?)",
             [(chrome_window_id, idx, url, title, group) for (idx, url, title, group) in tabs],
         )
+
+
+# ----- Snapshot reads (used by `idle-shutdown show`) ------------------------
+
+
+@dataclass(frozen=True)
+class AppRow:
+    executable_path: str
+    working_directory: str | None
+    document_path: str | None
+    desktop_index: int
+
+
+@dataclass(frozen=True)
+class TabRow:
+    profile_dir: str | None
+    profile_name: str | None
+    window_index: int
+    tab_index: int
+    url: str
+    title: str
+
+
+@dataclass(frozen=True)
+class SnapshotDetail:
+    snapshot_id: int
+    created_at: str
+    trigger: str
+    desktop_count: int
+    apps: list[AppRow]
+    tabs: list[TabRow]
+    profile_summary: list[tuple[str, str, int]]   # (profile_dir, profile_name, tab_count)
+
+
+class SnapshotReadRepo:
+    """Read-only queries for the inspector CLI."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def latest_id(self) -> int | None:
+        row = self.conn.execute(
+            "SELECT SnapshotId FROM Snapshot ORDER BY SnapshotId DESC LIMIT 1"
+        ).fetchone()
+        return int(row["SnapshotId"]) if row else None
+
+    def get_detail(self, snapshot_id: int) -> SnapshotDetail | None:
+        head = self.conn.execute(
+            "SELECT s.SnapshotId, s.CreatedAt, t.KindName "
+            "FROM Snapshot s "
+            "JOIN SnapshotTriggerKind t ON t.SnapshotTriggerKindId = s.TriggerKindId "
+            "WHERE s.SnapshotId = ?",
+            (snapshot_id,),
+        ).fetchone()
+        if head is None:
+            return None
+
+        desktop_count = int(self.conn.execute(
+            "SELECT COUNT(*) AS c FROM VirtualDesktop WHERE SnapshotId = ?",
+            (snapshot_id,),
+        ).fetchone()["c"])
+
+        apps = [
+            AppRow(
+                executable_path=str(r["ExecutablePath"]),
+                working_directory=(r["WorkingDirectory"]),
+                document_path=(r["DocumentPath"]),
+                desktop_index=int(r["DesktopIndex"]),
+            )
+            for r in self.conn.execute(
+                "SELECT a.ExecutablePath, a.WorkingDirectory, a.DocumentPath, "
+                "       d.DesktopIndex "
+                "FROM AppProcess a "
+                "JOIN VirtualDesktop d ON d.VirtualDesktopId = a.VirtualDesktopId "
+                "WHERE d.SnapshotId = ? "
+                "ORDER BY d.DesktopIndex, a.AppProcessId",
+                (snapshot_id,),
+            ).fetchall()
+        ]
+
+        tabs = [
+            TabRow(
+                profile_dir=(r["ProfileDir"]),
+                profile_name=(r["ProfileName"]),
+                window_index=int(r["WindowIndex"]),
+                tab_index=int(r["TabIndex"]),
+                url=str(r["Url"]),
+                title=str(r["Title"]),
+            )
+            for r in self.conn.execute(
+                "SELECT p.ProfileDir, p.ProfileName, w.WindowIndex, "
+                "       t.TabIndex, t.Url, t.Title "
+                "FROM ChromeTab t "
+                "JOIN ChromeWindow w ON w.ChromeWindowId = t.ChromeWindowId "
+                "LEFT JOIN ChromeProfile p ON p.ChromeProfileId = w.ChromeProfileId "
+                "WHERE w.SnapshotId = ? "
+                "ORDER BY p.ProfileDir, w.WindowIndex, t.TabIndex",
+                (snapshot_id,),
+            ).fetchall()
+        ]
+
+        profile_summary = [
+            (str(r["ProfileDir"]), str(r["ProfileName"]), int(r["TabCount"]))
+            for r in self.conn.execute(
+                "SELECT p.ProfileDir, p.ProfileName, COUNT(t.ChromeTabId) AS TabCount "
+                "FROM ChromeProfile p "
+                "LEFT JOIN ChromeWindow w ON w.ChromeProfileId = p.ChromeProfileId "
+                "LEFT JOIN ChromeTab t ON t.ChromeWindowId = w.ChromeWindowId "
+                "WHERE p.SnapshotId = ? "
+                "GROUP BY p.ChromeProfileId "
+                "ORDER BY p.ChromeProfileId",
+                (snapshot_id,),
+            ).fetchall()
+        ]
+
+        return SnapshotDetail(
+            snapshot_id=int(head["SnapshotId"]),
+            created_at=str(head["CreatedAt"]),
+            trigger=str(head["KindName"]),
+            desktop_count=desktop_count,
+            apps=apps,
+            tabs=tabs,
+            profile_summary=profile_summary,
+        )
