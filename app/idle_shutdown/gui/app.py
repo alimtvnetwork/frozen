@@ -467,18 +467,29 @@ class DashboardPanel(_PanelBase):  # pragma: no cover - GUI
                    "Running" if running else "Stopped",
                    "OK.TLabel" if running else "Warn.TLabel", col=0)
 
+        # Live countdown — bound to win.remaining_var, updated every 1s.
+        self._var_card(cards, "Time until prompt",
+                       self.win.remaining_var, col=1)
+        self._var_card(cards, "Idle for",
+                       self.win.idle_var, col=2)
+
+        for c in range(3):
+            cards.columnconfigure(c, weight=1, uniform="cards")
+
+        # Second row: counters
+        cards2 = ttk.Frame(wrap, style="Panel.TFrame")
+        cards2.pack(fill="x", pady=(0, 16), **pad)
         try:
             with connect() as conn:
                 total = ShutdownCounterRepo(conn).total()
                 last_id = SnapshotReadRepo(conn).latest_id()
         except Exception:  # noqa: BLE001
             total, last_id = 0, None
-        self._card(cards, "Total auto-shutdowns", str(total), "Big.TLabel", col=1)
-        self._card(cards, "Latest snapshot",
-                   f"#{last_id}" if last_id else "—", "Big.TLabel", col=2)
-
-        for c in range(3):
-            cards.columnconfigure(c, weight=1, uniform="cards")
+        self._card(cards2, "Total auto-shutdowns", str(total), "Big.TLabel", col=0)
+        self._card(cards2, "Latest snapshot",
+                   f"#{last_id}" if last_id else "—", "Big.TLabel", col=1)
+        for c in range(2):
+            cards2.columnconfigure(c, weight=1, uniform="cards2")
 
         # Settings summary
         ttk.Label(wrap, text="Current configuration",
@@ -536,6 +547,21 @@ class DashboardPanel(_PanelBase):  # pragma: no cover - GUI
                  else COLORS["accent"])
         self.tk.Label(inner, text=value, bg=COLORS["sidebar"], fg=color,
                       font=("Helvetica", 22, "bold"),
+                      anchor="w").pack(anchor="w", pady=(6, 0))
+
+    def _var_card(self, parent, title: str, var, col: int) -> None:
+        f = self.ttk.Frame(parent, style="Panel.TFrame")
+        f.grid(row=0, column=col, sticky="nsew",
+               padx=(0, 12) if col < 2 else (0, 0))
+        inner = self.tk.Frame(f, bg=COLORS["sidebar"], padx=18, pady=16,
+                              highlightthickness=1,
+                              highlightbackground=COLORS["border"])
+        inner.pack(fill="both", expand=True)
+        self.tk.Label(inner, text=title, bg=COLORS["sidebar"],
+                      fg=COLORS["fg_muted"], font=("Helvetica", 10),
+                      anchor="w").pack(anchor="w")
+        self.tk.Label(inner, textvariable=var, bg=COLORS["sidebar"],
+                      fg=COLORS["accent"], font=("Helvetica", 22, "bold"),
                       anchor="w").pack(anchor="w", pady=(6, 0))
 
 
