@@ -74,6 +74,25 @@ class SnapshotRepo:
         ).fetchone()
         return int(row["SnapshotId"]) if row else None
 
+    def prune(self, keep: int) -> int:
+        """Delete all but the most recent ``keep`` snapshots.
+
+        Children (VirtualDesktop, AppProcess, ChromeProfile, ChromeWindow,
+        ChromeTab) cascade via FK ON DELETE CASCADE. ShutdownLog rows have
+        ON DELETE SET NULL on SnapshotId, so log history is preserved.
+        Returns the number of Snapshot rows deleted.
+        """
+        if keep < 1:
+            raise ValueError("keep must be >= 1")
+        cur = self.conn.execute(
+            "DELETE FROM Snapshot WHERE SnapshotId NOT IN ("
+            "  SELECT SnapshotId FROM Snapshot "
+            "  ORDER BY SnapshotId DESC LIMIT ?"
+            ")",
+            (keep,),
+        )
+        return cur.rowcount or 0
+
 
 # ----- Shutdown log + counter -----------------------------------------------
 
