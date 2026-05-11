@@ -137,6 +137,7 @@ def cmd_run(silent: bool, dry_run_flag: Optional[bool]) -> None:  # noqa: ARG001
     from idle_shutdown.snapshot import take_snapshot
     from idle_shutdown.enums import SnapshotTriggerKind
     from idle_shutdown.single_instance import acquire_single_instance
+    from idle_shutdown.activity_guard import ActivityGuard, GuardConfig
 
     def _settings_provider(key: str):
         with connect() as conn:
@@ -179,11 +180,19 @@ def cmd_run(silent: bool, dry_run_flag: Optional[bool]) -> None:  # noqa: ARG001
         get_service_enabled=lambda: _settings_provider("ServiceState") == "Enabled",
     )
     service = IdleService(callbacks)
+    def _guard_cfg() -> GuardConfig:
+        return GuardConfig(
+            mic_enabled=str(_settings_provider("GuardMicEnabled")).lower() == "true",
+            audio_enabled=str(_settings_provider("GuardAudioEnabled")).lower() == "true",
+            fullscreen_enabled=str(_settings_provider("GuardFullscreenEnabled")).lower() == "true",
+        )
+    guard = ActivityGuard(_guard_cfg)
     monitor = IdleMonitor(
         source=get_default_idle_source(),
         threshold_ms_provider=service.threshold_ms,
         on_threshold=service.on_threshold_reached,
         on_activity=service.on_activity_during_prompt,
+        is_busy=guard.is_busy,
     )
     with acquire_single_instance():
         click.echo("idle monitor running (Ctrl+C to stop)")
