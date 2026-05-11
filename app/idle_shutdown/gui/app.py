@@ -86,6 +86,10 @@ def launch_gui() -> None:  # pragma: no cover - GUI entrypoint
 
     app = _MainWindow(root, tk, ttk)
     app.show("dashboard")
+    # If the service is enabled, the desktop app should begin watching idle
+    # time immediately. Users should not need to press Start before the first
+    # configured prompt can appear.
+    app.start_monitor_if_enabled()
     # Always-on UI heartbeat: keeps the "time remaining" countdown live
     # whether or not the monitor is running.
     app.start_ui_heartbeat()
@@ -232,6 +236,15 @@ class _MainWindow:  # pragma: no cover - GUI
     def monitor_running(self) -> bool:
         return self._monitor_running
 
+    def start_monitor_if_enabled(self) -> None:
+        try:
+            enabled = _get_setting("ServiceState") == "Enabled"
+        except Exception:  # noqa: BLE001
+            enabled = False
+        if enabled and not self.monitor_running():
+            self._start_monitor()
+            self._refresh_monitor_btn()
+
     def _toggle_monitor(self) -> None:
         if self.monitor_running():
             self._stop_monitor()
@@ -297,6 +310,8 @@ class _MainWindow:  # pragma: no cover - GUI
         self._heartbeat_job = self.root.after(1000, self._heartbeat_tick)
 
     def _start_monitor(self) -> None:
+        if self._monitor_running:
+            return
         from idle_shutdown.monitor import IdleMonitor
         from idle_shutdown.service import IdleService, ServiceCallbacks
         from idle_shutdown.snapshot import take_snapshot
@@ -364,6 +379,12 @@ class _MainWindow:  # pragma: no cover - GUI
         win.attributes("-topmost", True)
         win.geometry("420x180")
         win.transient(self.root)
+        try:
+            win.lift()
+            win.focus_force()
+            self.root.bell()
+        except Exception:  # noqa: BLE001
+            pass
 
         state = {"remaining_ms": int(countdown_seconds) * 1000,
                  "done": False, "after": None}
