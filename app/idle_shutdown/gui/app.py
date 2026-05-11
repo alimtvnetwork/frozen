@@ -336,16 +336,22 @@ class _MainWindow:  # pragma: no cover - GUI
         self._heartbeat_tick()
 
     def _heartbeat_tick(self) -> None:
-        idle_ms = self._read_idle_ms()
-        threshold = self._threshold_ms()
-        remaining = max(0, threshold - idle_ms)
-        self.idle_var.set(self._fmt_ms(idle_ms))
-        self.remaining_var.set(self._fmt_ms(remaining))
+        # Only watch input / count down when the monitor is actually
+        # running. Before "Start monitor" is pressed, the dashboard should
+        # show neutral placeholders rather than a live ticking countdown.
         if self._monitor_running and self._monitor is not None:
+            idle_ms = self._read_idle_ms()
+            threshold = self._threshold_ms()
+            remaining = max(0, threshold - idle_ms)
+            self.idle_var.set(self._fmt_ms(idle_ms))
+            self.remaining_var.set(self._fmt_ms(remaining))
             try:
                 self._monitor.tick()
             except Exception:  # noqa: BLE001
                 logger.exception("monitor tick failed")
+        else:
+            self.idle_var.set("—")
+            self.remaining_var.set("Not running")
         self._heartbeat_job = self.root.after(1000, self._heartbeat_tick)
 
     def _start_monitor(self) -> None:
