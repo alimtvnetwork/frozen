@@ -154,8 +154,9 @@ def cmd_show(snapshot_id: Optional[int], as_json: bool, max_tabs: int) -> None:
             "desktop_count": detail.desktop_count,
             "apps": [a.__dict__ for a in detail.apps],
             "profiles": [
-                {"profile_dir": d, "profile_name": n, "tab_count": c}
-                for d, n, c in detail.profile_summary
+                {"profile_dir": d, "profile_name": n,
+                 "tab_count": c, "browser_name": b}
+                for d, n, c, b in detail.profile_summary
             ],
             "tabs": [t.__dict__ for t in detail.tabs],
         }, indent=2))
@@ -182,15 +183,17 @@ def cmd_show(snapshot_id: Optional[int], as_json: bool, max_tabs: int) -> None:
 
     if detail.profile_summary:
         prof_table = Table(title="Chrome profiles")
+        prof_table.add_column("Browser")
         prof_table.add_column("ProfileDir")
         prof_table.add_column("Name")
         prof_table.add_column("Tabs", justify="right")
-        for d, n, c in detail.profile_summary:
-            prof_table.add_row(d, n, str(c))
+        for d, n, c, b in detail.profile_summary:
+            prof_table.add_row(b, d, n, str(c))
         console.print(prof_table)
 
     if detail.tabs:
         tabs_table = Table(title=f"Tabs (showing first {min(max_tabs, len(detail.tabs))} of {len(detail.tabs)})")
+        tabs_table.add_column("Browser")
         tabs_table.add_column("Profile")
         tabs_table.add_column("Win", justify="right")
         tabs_table.add_column("Idx", justify="right")
@@ -198,6 +201,7 @@ def cmd_show(snapshot_id: Optional[int], as_json: bool, max_tabs: int) -> None:
         tabs_table.add_column("URL", overflow="fold", max_width=70)
         for t in detail.tabs[:max_tabs]:
             tabs_table.add_row(
+                t.browser_name or "-",
                 t.profile_name or t.profile_dir or "-",
                 str(t.window_index), str(t.tab_index),
                 t.title, t.url,
