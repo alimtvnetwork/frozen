@@ -72,9 +72,17 @@ def _mac_lsof_uses(_path: str) -> bool:  # pragma: no cover
 def _mac_audio_playback_active() -> bool:  # pragma: no cover - platform specific
     """True if any output device is currently rendering audio.
 
-    Uses ``ioreg`` which is always available on macOS — looks for IOAudio
-    streams reporting non-zero state. Falls back to False on any error.
+    Modern macOS (especially Apple Silicon) no longer publishes
+    ``IOAudioEngineState`` via the legacy ``IOAudioEngine`` class — the HAL
+    moved to CoreAudio user-space. We check, in order:
+
+    1. ``pmset -g assertions`` for a ``coreaudiod`` PreventUserIdleSystemSleep
+       assertion. coreaudiod takes this assertion any time an output device
+       is actively rendering audio (Music, YouTube/Chrome, VLC, Safari, …).
+    2. Legacy ``ioreg -c IOAudioEngine`` lookup as a fallback for older Macs.
     """
+    if _mac_pmset_audio_active():
+        return True
     if not _sh.which("ioreg"):
         return False
     try:
@@ -87,6 +95,36 @@ def _mac_audio_playback_active() -> bool:  # pragma: no cover - platform specifi
     # IOAudioEngineState = 1 means the engine is actively running.
     for line in out.splitlines():
         if "IOAudioEngineState" in line and line.rstrip().endswith("= 1"):
+            return True
+    return False
+
+
+def _mac_pmset_audio_active() -> bool:  # pragma: no cover - platform specific
+    """Inspect ``pmset -g assertions`` for an active coreaudiod assertion.
+
+    Output looks like::
+
+        pid 123(coreaudiod): [0x0000...] 00:00:42 PreventUserIdleSystemSleep
+          named: "com.apple.audio.AudioSession"
+
+    The presence of any ``coreaudiod`` row under PreventUserIdleSystemSleep /
+    PreventUserIdleDisplaySleep means at least one output stream is live.
+    """
+    if not _sh.which("pmset"):
+        return False
+    try:
+        out = subprocess.check_output(
+            ["pmset", "-g", "assertions"],
+            timeout=2, stderr=subprocess.DEVNULL,
+        ).decode("utf-8", "replace")
+    except Exception:
+        return False
+    for raw in out.splitlines():
+        line = raw.strip()
+        if "coreaudiod" in line and (
+            "PreventUserIdleSystemSleep" in line
+            or "PreventUserIdleDisplaySleep" in line
+        ):
             return True
     return False
 
