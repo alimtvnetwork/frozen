@@ -147,6 +147,7 @@ SETTING_DEFS: tuple[SettingDef, ...] = (
     SettingDef("LastRestoredSnapshotId", "0", _validate_int_range(0, 2**31 - 1), int),
     SettingDef("LastRestoredAt", "", _validate_iso8601_or_empty, str),
     SettingDef("DisabledUntil", "", _validate_iso8601_or_empty, str),
+    SettingDef("FirstRunCompleted", "false", _validate_bool, lambda v: v == "true"),
 )
 
 SETTINGS_BY_KEY: dict[str, SettingDef] = {s.key: s for s in SETTING_DEFS}
