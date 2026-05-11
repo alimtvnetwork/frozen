@@ -460,14 +460,18 @@ class _MainWindow:  # pragma: no cover - GUI
 
         btns = tk.Frame(win, bg=COLORS["panel"])
         btns.pack()
-        tk.Button(btns, text="Yes, I'm here", width=14,
-                  bg=COLORS["accent"], fg="#ffffff", relief="flat", bd=0,
-                  activebackground=COLORS["accent_hi"], cursor="hand2",
-                  command=lambda: finish(PopupResult.Yes)).pack(side="left", padx=8)
-        tk.Button(btns, text="No, shut down", width=14,
-                  bg=COLORS["err"], fg="#ffffff", relief="flat", bd=0,
-                  activebackground="#ff6b62", cursor="hand2",
-                  command=lambda: finish(PopupResult.No)).pack(side="left", padx=8)
+        # Use Label-based buttons so the colored bg is visible on macOS
+        # (native tk.Button ignores bg/fg under Aqua and stays white).
+        _make_button(btns, text="Yes, I'm here",
+                     bg=COLORS["accent"], hover_bg=COLORS["accent_hi"],
+                     fg="#ffffff",
+                     command=lambda: finish(PopupResult.Yes),
+                     padx=24, pady=10).pack(side="left", padx=8, pady=8)
+        _make_button(btns, text="No, shut down",
+                     bg=COLORS["err"], hover_bg="#ff6b62",
+                     fg="#ffffff",
+                     command=lambda: finish(PopupResult.No),
+                     padx=24, pady=10).pack(side="left", padx=8, pady=8)
 
         def tick() -> None:
             if state["done"]:
