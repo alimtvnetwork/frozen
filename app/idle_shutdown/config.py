@@ -138,6 +138,8 @@ SETTING_DEFS: tuple[SettingDef, ...] = (
     SettingDef("GuardMicEnabled", "true", _validate_bool, lambda v: v == "true"),
     SettingDef("GuardAudioEnabled", "true", _validate_bool, lambda v: v == "true"),
     SettingDef("GuardFullscreenEnabled", "true", _validate_bool, lambda v: v == "true"),
+    SettingDef("SnapshotKeepCount", "50",
+               _validate_int_range(1, 10000), int),
     SettingDef("ChromeExecutablePath", "", _validate_text, str),
     SettingDef("LastRestoredSnapshotId", "0", _validate_int_range(0, 2**31 - 1), int),
     SettingDef("LastRestoredAt", "", _validate_iso8601_or_empty, str),

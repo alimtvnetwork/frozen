@@ -115,6 +115,20 @@ def take_snapshot(
                 snapshot_id, len(apps), len(chrome.profiles),
                 chrome_windows_total, chrome_tabs_total,
             )
+            # Auto-prune old snapshots in a separate transaction so a failure
+            # here can never roll back the just-committed snapshot.
+            try:
+                with connect() as prune_conn:
+                    keep_raw = SettingsRepo(prune_conn).get("SnapshotKeepCount") or "50"
+                    keep = max(1, int(keep_raw))
+                    deleted = SnapshotRepo(prune_conn).prune(keep)
+                    if deleted:
+                        logger.info(
+                            "event=snapshots_pruned kept=%d deleted=%d",
+                            keep, deleted,
+                        )
+            except Exception:  # noqa: BLE001
+                logger.exception("event=snapshot_prune_failed")
             return SnapshotResult(
                 snapshot_id=snapshot_id,
                 desktop_count=max(1, desktop_count),
