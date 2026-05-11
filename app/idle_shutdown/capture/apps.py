@@ -165,7 +165,18 @@ def enumerate_user_apps(
     require_visible: bool = True,
 ) -> list[AppInfo]:
     proc_iter = process_iter or _default_process_iter
-    vis_pids = (visible_pids or _default_visible_pids)() if require_visible else None
+    vis_pids: set[int] | None = None
+    if require_visible:
+        vis_pids = (visible_pids or _default_visible_pids)()
+        # If the platform backend can't enumerate visible windows (e.g. Quartz
+        # missing on macOS, no wmctrl on Linux), don't silently drop every
+        # process — disable the filter and warn instead.
+        if not vis_pids:
+            logger.warning(
+                "event=visible_pids_unavailable action=disable_visibility_filter "
+                "hint='install pyobjc-framework-Quartz on macOS / wmctrl on Linux'"
+            )
+            vis_pids = None
     out: list[AppInfo] = []
     own_exe = _norm(sys.executable) if sys.executable else ""
     for proc in proc_iter():
