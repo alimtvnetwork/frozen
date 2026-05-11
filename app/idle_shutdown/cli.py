@@ -512,6 +512,46 @@ def cmd_prune(keep: Optional[int]) -> None:
     click.echo(f"pruned {deleted} snapshot(s); kept newest {keep}")
 
 
+@cli.command("export")
+@click.option("--snapshot-id", "snapshot_id", type=int, default=None,
+              help="Snapshot to export (default: latest).")
+@click.option("--format", "fmt", type=click.Choice(["json", "html"]),
+              default="json", show_default=True)
+@click.option("--output", "-o", type=click.Path(dir_okay=False), default=None,
+              help="Output path. Default: <snapshots_dir>/snapshot-<id>.<ext>.")
+@click.option("--stdout", "to_stdout", is_flag=True,
+              help="Write to stdout instead of a file.")
+def cmd_export(snapshot_id: Optional[int], fmt: str,
+               output: Optional[str], to_stdout: bool) -> None:
+    """Export a snapshot as portable JSON or self-contained HTML."""
+    from pathlib import Path
+    from idle_shutdown.config import ensure_app_dirs, snapshots_dir
+    from idle_shutdown.export import snapshot_to_html, snapshot_to_json
+
+    with connect() as conn:
+        repo = SnapshotReadRepo(conn)
+        if snapshot_id is None:
+            snapshot_id = repo.latest_id()
+            if snapshot_id is None:
+                click.echo("no snapshots found", err=True); sys.exit(1)
+        detail = repo.get_detail(snapshot_id)
+    if detail is None:
+        click.echo(f"snapshot {snapshot_id} not found", err=True); sys.exit(1)
+
+    payload = (snapshot_to_html(detail) if fmt == "html"
+               else snapshot_to_json(detail))
+
+    if to_stdout:
+        click.echo(payload)
+        return
+
+    if output is None:
+        ensure_app_dirs()
+        output = str(snapshots_dir() / f"snapshot-{detail.snapshot_id}.{fmt}")
+    Path(output).write_text(payload, encoding="utf-8")
+    click.echo(f"wrote {output}")
+
+
 # ----- entrypoint with exit-code mapping ------------------------------------
 
 
