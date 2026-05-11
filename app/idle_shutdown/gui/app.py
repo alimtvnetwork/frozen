@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import logging
-import threading
-from typing import Callable
+from typing import Callable, Optional
 
 from idle_shutdown.config import SETTING_DEFS, get_setting_def
 from idle_shutdown.db.connection import connect, init_db
@@ -87,6 +86,9 @@ def launch_gui() -> None:  # pragma: no cover - GUI entrypoint
 
     app = _MainWindow(root, tk, ttk)
     app.show("dashboard")
+    # Always-on UI heartbeat: keeps the "time remaining" countdown live
+    # whether or not the monitor is running.
+    app.start_ui_heartbeat()
     root.mainloop()
 
 
