@@ -26,6 +26,61 @@ logger = logging.getLogger(__name__)
 Signal = Callable[[], bool]
 
 
+_MAC_MEDIA_PLAYER_STATE_SCRIPTS = {
+    "VLC": """
+tell application "System Events"
+    if not (exists process "VLC") then return "unknown"
+end tell
+tell application "VLC"
+    if playing then return "playing"
+    return "paused"
+end tell
+""",
+    "IINA": """
+tell application "System Events"
+    if not (exists process "IINA") then return "unknown"
+end tell
+tell application "IINA" to return player state as string
+""",
+    "QuickTime Player": """
+tell application "System Events"
+    if not (exists process "QuickTime Player") then return "unknown"
+end tell
+tell application "QuickTime Player"
+    if (count documents) is 0 then return "stopped"
+    if playing of front document then return "playing"
+    return "paused"
+end tell
+""",
+    "Music": """
+tell application "System Events"
+    if not (exists process "Music") then return "unknown"
+end tell
+tell application "Music" to return player state as string
+""",
+    "Spotify": """
+tell application "System Events"
+    if not (exists process "Spotify") then return "unknown"
+end tell
+tell application "Spotify" to return player state as string
+""",
+    "TV": """
+tell application "System Events"
+    if not (exists process "TV") then return "unknown"
+end tell
+tell application "TV" to return player state as string
+""",
+    "Podcasts": """
+tell application "System Events"
+    if not (exists process "Podcasts") then return "unknown"
+end tell
+tell application "Podcasts" to return player state as string
+""",
+}
+
+_MAC_STICKY_AUDIO_PLAYERS = {"vlc", "iina", "quicktime player"}
+
+
 @dataclass
 class GuardConfig:
     mic_enabled: bool = True
@@ -71,6 +126,49 @@ def _mac_lsof_uses(_path: str) -> bool:  # pragma: no cover
     return False
 
 
+def _normalize_media_state(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    state = value.strip().lower()
+    if not state or state == "unknown":
+        return None
+    if state in {"playing", "true", "yes", "1"}:
+        return True
+    if state in {"paused", "pause", "stopped", "stop", "false", "no", "0"}:
+        return False
+    if "paused" in state or "stopped" in state:
+        return False
+    if "playing" in state:
+        return True
+    return None
+
+
+def _mac_run_osascript(script: str) -> str | None:  # pragma: no cover - platform specific
+    if not _sh.which("osascript"):
+        return None
+    args = ["osascript"]
+    for line in script.strip().splitlines():
+        args.extend(["-e", line])
+    try:
+        out = subprocess.check_output(args, timeout=1, stderr=subprocess.DEVNULL)
+    except Exception:
+        return None
+    return out.decode("utf-8", "replace").strip()
+
+
+def _mac_known_media_playback_state(app_name: str | None) -> bool | None:  # pragma: no cover
+    if not app_name:
+        return None
+    for name, script in _MAC_MEDIA_PLAYER_STATE_SCRIPTS.items():
+        if app_name.lower() == name.lower():
+            return _normalize_media_state(_mac_run_osascript(script))
+    return None
+
+
+def _mac_is_sticky_audio_player(app_name: str | None) -> bool:
+    return bool(app_name and app_name.lower() in _MAC_STICKY_AUDIO_PLAYERS)
+
+
 def _mac_audio_playback_active() -> bool:  # pragma: no cover - platform specific
     """True if any output device is currently rendering audio.
 
@@ -82,6 +180,15 @@ def _mac_audio_playback_active() -> bool:  # pragma: no cover - platform specifi
     2. ``pmset -g assertions`` as a fallback when CoreAudio cannot be queried.
     3. Legacy ``ioreg -c IOAudioEngine`` lookup for older Macs.
     """
+    foreground_app = _mac_frontmost_app_name()
+    foreground_media_state = _mac_known_media_playback_state(foreground_app)
+    if foreground_media_state is True:
+        return True
+    if foreground_media_state is False and _mac_is_sticky_audio_player(foreground_app):
+        # Players like VLC can leave the CoreAudio device marked as running
+        # while paused because they keep an output stream open and send silence.
+        return False
+
     coreaudio_state = _mac_coreaudio_output_active()
     if coreaudio_state is not None:
         return coreaudio_state
@@ -220,6 +327,21 @@ def _mac_pmset_audio_active() -> bool:  # pragma: no cover - platform specific
     return False
 
 
+def _mac_frontmost_app_name() -> str | None:  # pragma: no cover - platform specific
+    try:
+        from AppKit import NSWorkspace  # type: ignore
+    except Exception:
+        return None
+    try:
+        active = NSWorkspace.sharedWorkspace().frontmostApplication()
+        if active is None:
+            return None
+        name = active.localizedName()
+        return str(name) if name else None
+    except Exception:
+        return None
+
+
 def _mac_foreground_fullscreen() -> bool:  # pragma: no cover - platform specific
     try:
         from AppKit import NSWorkspace  # type: ignore
@@ -235,6 +357,11 @@ def _mac_foreground_fullscreen() -> bool:  # pragma: no cover - platform specifi
     try:
         active = NSWorkspace.sharedWorkspace().frontmostApplication()
         if active is None:
+            return False
+        app_name = str(active.localizedName() or "")
+        if _mac_known_media_playback_state(app_name) is False:
+            # A paused movie/player in fullscreen should not freeze the idle
+            # countdown. Playback itself is handled by the audio signal.
             return False
         pid = int(active.processIdentifier())
         wins = CGWindowListCopyWindowInfo(
