@@ -1,109 +1,89 @@
 
-## Context & Feasibility Note
+# Plan — Dry-run idle detector + multi-profile Chrome capture
 
-This project's repo is a TanStack Start web app, but the requested deliverable is a **standalone Windows Python utility**. The Python code will live in a new top-level `app/` directory (separate from the web stack) and won't be wired into Vite/React. The `spec/` tree will live at the repo root as requested.
+Goal for now: prove the full pipeline works end-to-end **without actually shutting anything down**. Detect idle → ignore if you're in a call / watching a video → ask for 10 seconds → if no answer, snapshot all open apps + Chrome tabs (across every Chrome profile) into the DB and show a "would shut down now" popup. Nothing closes, nothing reboots.
 
-**4–5h MVP feasibility: confirmed with caveats.** Realistic in that window:
-- Idle detection (GetLastInputInfo via pywin32)
-- Tk popup w/ countdown
-- SQLite schema + settings/snapshot/log persistence
-- Running-app capture (psutil) + graceful shutdown
-- Auto-start via registry
-- CLI (argparse / click)
-- Basic restore (relaunch exes, reopen Chrome via `--restore-last-session` or URL list)
+Phases are ordered so you can stop after any one and still have a working app.
 
-**Risky inside 5h — flagged for post-MVP unless trimmed:**
-- Per-virtual-desktop app *assignment* capture & restore (Windows VirtualDesktop COM API is undocumented; `pyvda` works but desktop→window mapping for restore is fragile). MVP will record desktop **count** + best-effort assignment, restore by recreating N desktops and launching apps on desktop 1, with assignment as a stretch goal.
-- Chrome tab capture with full window/group structure. MVP path: parse Chrome's `Current Session`/`Current Tabs` SNSS files (or fall back to Bookmarks-style URL list); full group fidelity requires the companion extension — documented as Phase 2.
-- True "graceful close" of every app (each app has its own quit semantics). MVP issues WM_CLOSE then falls back to Windows shutdown which handles the rest.
+---
 
-These trade-offs are written into the spec's `10-acceptance-criteria/` and `01-overview/` so scope is explicit before coding.
+## Phase 1 — Dry-run mode + 10s popup (smallest useful slice)
 
-## Phase 0 — Spec & Plan (this phase, on `next`)
+Make the existing `run` loop completely safe to leave on:
 
-Create the full folder tree exactly as specified and populate every leaf with focused markdown. No Python yet.
+- Add a `DryRun` setting (default `true` for now). When true, `_take_snapshot_and_shutdown` takes the snapshot and shows a **"Would shut down now"** info popup instead of calling `execute_shutdown()`. No `shutdown` / `osascript` / `systemctl` is ever invoked.
+- Change default `PopupCountdownSeconds` from 5 → **10**.
+- Popup now lists what *would* be saved: app count, Chrome window/tab count, snapshot id — so you can verify visually.
+- New CLI: `idle-shutdown run --dry-run` flag (overrides setting for one run).
 
-```text
-spec/21-app/
-  01-overview/README.md            scope, stack, MVP cut-lines, feasibility
-  02-activity-monitor/README.md    GetLastInputInfo design, polling loop, thresholds
-  03-idle-popup/README.md          Tk always-on-top, countdown, non-blocking
-  04-snapshot-capture/
-    README.md                      orchestration
-    chrome-tabs/README.md          SNSS parsing + extension fallback
-    running-apps/README.md         psutil filter rules, working dir, doc path
-    virtual-desktops/README.md     pyvda usage, count + assignment best-effort
-    shutdown-log/README.md         counter + timestamped rows
-  05-shutdown-sequence/README.md   close order, WM_CLOSE, shutdown.exe /s /t
-  06-startup-and-restore/README.md HKCU\...\Run registration, restore order
-  07-sqlite-schema/
-    README.md                      DDL, indexes, migrations
-    erd.md                         Mermaid ERD of all tables + lookups
-  08-cli-commands/README.md        argparse command table + examples
-  09-enums/README.md               Python Enum ↔ lookup-table mirror rules
-  10-acceptance-criteria/README.md the 11 criteria + verification method each
-  error-manage/README.md           exception taxonomy, log rotation, retry policy
+Acceptance: leave `./run.sh run` going, walk away, come back to a popup listing your apps + tab count. DB has a new snapshot row. System is untouched.
 
-plan.md                            phased build plan (mirrors phases below)
-```
+---
 
-## Phase 1 — Project skeleton (next)
+## Phase 2 — Activity guard (mic / audio / fullscreen video)
 
-```text
-app/
-  pyproject.toml                pywin32, psutil, pynput, pyvda, click, rich
-  idle_shutdown/
-    __init__.py
-    __main__.py                 entrypoint: `python -m idle_shutdown`
-    config.py                   paths (%LOCALAPPDATA%\IdleShutdownRestore\…)
-    enums.py                    SnapshotTriggerKind, ShutdownOutcomeStatus, ServiceState
-    db/
-      schema.sql                full DDL incl. lookup seed rows
-      connection.py             sqlite3 conn + migration runner
-      repositories.py           SettingRepo, SnapshotRepo, ShutdownLogRepo
-    logging_setup.py            rotating file handler → Logs\app.log
-```
+Suppress the "are you idle?" check when you're clearly busy. A new `ActivityGuard` module returns `busy=true` if **any** of these hold; `IdleMonitor.tick` skips firing `on_threshold` while busy.
 
-Outcome: `python -m idle_shutdown init-db` creates the DB at the spec'd path with all tables + seeded enums.
+Signals (all best-effort, each one independently skippable):
+- **Microphone in use** — macOS: read `tccutil`/CoreAudio `AudioObjectGetPropertyData` for input device "is running" flag (via pyobjc `CoreAudio`). Windows: query `IAudioSessionManager2` for any active capture session. Linux: `pactl list source-outputs`.
+- **Audio playback active** — same APIs, render side. Catches Spotify, YouTube, Zoom playback.
+- **Fullscreen window** — macOS: `NSWorkspace` active app + `kCGWindowIsOnscreen` bounds == screen bounds. Windows: `GetForegroundWindow` + compare rect to monitor rect. Covers movies / fullscreen YouTube / games.
+- **Camera in use** (bonus, cheap on macOS via the same CoreMediaIO path).
 
-## Phase 2 — Activity monitor + popup + idle loop (next)
+Each signal is wrapped so a missing dependency just disables that signal — never crashes the loop. New settings: `GuardMicEnabled`, `GuardAudioEnabled`, `GuardFullscreenEnabled` (all default `true`).
 
-- `monitor.py`: thread polling `GetLastInputInfo` every 1s.
-- `popup.py`: Tk Toplevel, `-topmost 1`, countdown label, Yes/No → asyncio-safe queue.
-- `service.py`: state machine Idle → Prompting → Snapshotting → ShuttingDown / Cancelled.
+Logged once per state change: `event=activity_guard busy=true reason=mic_active`.
 
-Outcome: runs in foreground, popup fires after configured threshold, Yes resets, No/timeout transitions to snapshot stub.
+---
 
-## Phase 3 — Snapshot capture (next)
+## Phase 3 — Multi-profile Chrome capture
 
-- `capture/apps.py` (psutil)
-- `capture/chrome.py` (SNSS parse; if parse fails, read `Last Tabs` / `Last Session` filenames and store URL list only)
-- `capture/desktops.py` (pyvda; record count, attempt window→desktop map)
-- Persist via `SnapshotRepo` in one transaction; write `ShutdownLog` row + bump `ShutdownCounter`.
+Today `capture/chrome.py` only reads the `Default` profile. Real users have `Profile 1`, `Profile 2`, "Work", "Personal" etc., plus the whole Chrome **Beta** / **Canary** install.
 
-Outcome: `python -m idle_shutdown snapshot` writes a complete snapshot row tree.
+Approach:
+1. Read Chrome's `Local State` JSON (sibling of `Default/`) — it contains `profile.info_cache` mapping each profile dir → human name (e.g. `"Profile 1" → "Work"`).
+2. For each profile dir, parse its own `Sessions/` folder with the existing SNSS reader.
+3. Schema additions (one migration, additive only — won't break existing DB):
+   - `ChromeProfile(ChromeProfileId PK, SnapshotId FK, ProfileDir TEXT, ProfileName TEXT)`
+   - `ChromeWindow.ChromeProfileId` nullable FK (old rows stay valid).
+4. Snapshot output now reads `chrome_profiles=2 chrome_windows=5 chrome_tabs=143`.
+5. Same loop optionally walks Chrome Beta / Edge / Brave user-data dirs (gated by `CaptureChromiumVariants` setting, default `false` for now).
 
-## Phase 4 — Shutdown + auto-start + restore (next)
+Open question for you: do you want each profile's tabs treated as **one combined list**, or kept **grouped per profile** in the eventual UI? (Schema supports both; this only changes how we display.)
 
-- `shutdown.py`: WM_CLOSE to top-level windows, then `shutdown /s /t 5 /f`.
-- `autostart.py`: write `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value.
-- `restore.py`: read latest snapshot, ensure N virtual desktops via pyvda, `subprocess.Popen` each exe with cwd, launch Chrome with `--restore-last-session` plus URL list fallback.
+---
 
-Outcome: end-to-end loop verified in a VM; `restore` CLI command works on demand.
+## Phase 4 — Inspector view (sanity check what got saved)
 
-## Phase 5 — CLI polish + acceptance pass (next)
+A read-only CLI to eyeball the latest snapshot without writing SQL:
+- `idle-shutdown show` → prints latest snapshot summary (apps with paths, profiles, windows, tabs with URL+title) as a Rich table.
+- `idle-shutdown show --snapshot-id N` for a specific one.
+- `idle-shutdown show --json` for piping.
 
-`click` group with: `settings show`, `settings set-idle <minutes>`, `settings set-countdown <seconds>`, `history`, `snapshot`, `disable [--minutes N]`, `enable`, `restore`, `install-autostart`, `uninstall-autostart`. Walk through the 11 acceptance criteria, mark pass/defer.
+This is the "did it really save what I think it saved?" command.
 
-## Database (verbatim, locked)
+---
 
-Schema, PascalCase table/column names, `{TableName}Id INTEGER PK AUTOINCREMENT`, SMALLINT enum FKs, lookup tables seeded from Python `Enum` at `init-db`. ERD rendered in `spec/21-app/07-sqlite-schema/erd.md` as Mermaid `erDiagram`.
+## Phase 5 (deferred — flip the switch later)
 
-## Open questions before Phase 0
+When you're ready to go live: set `DryRun=false`, raise countdown back to your real value, optionally add a "Snooze 30 min" button to the popup. No code changes needed beyond toggling the setting and re-enabling `execute_shutdown()` from Phase 1.
 
-1. **Chrome tab fidelity**: OK to ship MVP with **URL+title list per window** (no group names) and defer full group capture to a Phase-2 companion extension? Verbatim asks for groups but lists the extension as one of three acceptable sources.
-2. **Per-desktop app assignment**: OK to ship MVP that records desktop **count** and relaunches all apps on desktop 1, with per-desktop mapping as a stretch within the 5h budget?
-3. **Auto-start mechanism**: prefer **HKCU Run registry** (simpler, no admin) over Task Scheduler? Verbatim allows either.
-4. **Confirm target environment**: this will be developed/tested on Windows (not in this Linux sandbox). I'll write code + unit tests that can run cross-platform where possible, but final integration testing requires you to run on Windows. OK?
+---
 
-Reply with answers (or just `next` to accept defaults: 1=URL+title list, 2=count only + desktop 1, 3=HKCU Run, 4=yes) and I'll execute Phase 0.
+## Technical notes (skip if not interested)
+
+- All new settings live in `Setting` table via existing `SettingsRepo` — no new infra.
+- Schema migration in Phase 3 is additive (`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN` guarded by a `PRAGMA table_info` check) so existing snapshots 17–21 keep working.
+- Activity guard runs on the same 1 Hz tick as `IdleMonitor`; cost is ~one syscall per signal per second.
+- Multi-profile capture reuses `_iter_commands` / `read_snss_file` from `capture/snss.py` unchanged — only the directory enumeration changes.
+- Tests: each phase ships with unit tests using fakes (mock mic state, fake `Local State` JSON, fake SNSS files) so nothing depends on a real Chrome being installed.
+
+---
+
+## Questions before I start
+
+1. **Phase order OK?** Suggest doing **Phase 1 first** (safest, immediate value), then Phase 3 (multi-profile — directly answers your Chrome accounts question), then Phase 2 (guard).
+2. **Multi-profile display:** combined list or grouped per profile name?
+3. **Other Chromium browsers** (Edge, Brave, Chrome Beta) — care about them now, or Chrome only?
+
+Tell me which phase to execute and I'll ship it.
