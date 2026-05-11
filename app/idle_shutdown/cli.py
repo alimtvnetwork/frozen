@@ -124,10 +124,14 @@ def cmd_history(limit: int) -> None:
 
 @cli.command("run")
 @click.option("--silent", is_flag=True, help="Suppress console window (Phase 2).")
-def cmd_run(silent: bool) -> None:  # noqa: ARG001
+@click.option("--dry-run/--no-dry-run", "dry_run_flag", default=None,
+              help="Override DryRun setting for this run. In dry-run mode the "
+                   "snapshot is taken and an info popup is shown, but the OS "
+                   "shutdown command is never invoked.")
+def cmd_run(silent: bool, dry_run_flag: Optional[bool]) -> None:  # noqa: ARG001
     """Foreground service: idle monitor + popup loop."""
     from idle_shutdown.monitor import IdleMonitor, get_default_idle_source
-    from idle_shutdown.popup import show_popup
+    from idle_shutdown.popup import show_info_popup, show_popup
     from idle_shutdown.service import IdleService, ServiceCallbacks
     from idle_shutdown.shutdown import execute_shutdown
     from idle_shutdown.snapshot import take_snapshot
@@ -138,11 +142,32 @@ def cmd_run(silent: bool) -> None:  # noqa: ARG001
         with connect() as conn:
             return SettingsRepo(conn).get(key)
 
+    def _is_dry_run() -> bool:
+        if dry_run_flag is not None:
+            return dry_run_flag
+        return str(_settings_provider("DryRun")).lower() == "true"
+
     def _take_snapshot_and_shutdown() -> None:
         try:
-            take_snapshot(SnapshotTriggerKind.Auto, record_log=True)
+            res = take_snapshot(SnapshotTriggerKind.Auto, record_log=True)
         except Exception as e:  # noqa: BLE001
             click.echo(f"snapshot failed: {e}", err=True)
+            return
+        if _is_dry_run():
+            msg = (
+                f"DRY RUN — your system would shut down now.\n\n"
+                f"Snapshot #{res.snapshot_id} saved to the database:\n"
+                f"  • {res.app_count} application(s)\n"
+                f"  • {res.chrome_window_count} Chrome window(s), "
+                f"{res.chrome_tab_count} tab(s)\n"
+                f"  • {res.desktop_count} virtual desktop(s)\n\n"
+                f"Nothing was closed. Click OK to dismiss."
+            )
+            click.echo(f"dry-run: would shut down (snapshot {res.snapshot_id})")
+            try:
+                show_info_popup("Idle Shutdown — Dry Run", msg)
+            except Exception as e:  # noqa: BLE001
+                click.echo(f"dry-run popup failed: {e}", err=True)
             return
         execute_shutdown()
 
