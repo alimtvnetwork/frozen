@@ -110,28 +110,49 @@ def _default_visible_pids() -> set[int]:  # pragma: no cover
 
 
 def _macos_visible_pids() -> set[int]:  # pragma: no cover
-    """Use Quartz CGWindowListCopyWindowInfo for on-screen, layer-0 windows."""
+    """Enumerate visible GUI app PIDs on macOS.
+
+    Primary source: ``NSWorkspace.runningApplications`` filtered to regular
+    activation policy. This requires no special permission and reliably
+    surfaces every Dock/GUI app (Finder, Chrome, VS Code, WhatsApp, …).
+
+    We also union in any PIDs reported by Quartz's on-screen window list,
+    which catches a few edge cases (e.g. agents that show a window but use
+    a non-regular activation policy). Quartz alone is *not* sufficient
+    because, without Screen Recording permission, it only returns windows
+    owned by the calling process.
+    """
+    pids: set[int] = set()
+    # 1) NSWorkspace — no permission required.
+    try:
+        from AppKit import NSWorkspace, NSApplicationActivationPolicyRegular  # type: ignore
+
+        for app in NSWorkspace.sharedWorkspace().runningApplications() or []:
+            try:
+                if int(app.activationPolicy()) == int(NSApplicationActivationPolicyRegular):
+                    pids.add(int(app.processIdentifier()))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    # 2) Quartz (best-effort augmentation; may be empty without permission).
     try:
         from Quartz import (  # type: ignore
             CGWindowListCopyWindowInfo,
             kCGWindowListOptionOnScreenOnly,
             kCGNullWindowID,
         )
-    except Exception:
-        return set()
-    pids: set[int] = set()
-    try:
         windows = CGWindowListCopyWindowInfo(
             kCGWindowListOptionOnScreenOnly, kCGNullWindowID
         ) or []
         for w in windows:
             if int(w.get("kCGWindowLayer", 1)) != 0:
-                continue  # skip menubar / dock layers
+                continue
             pid = w.get("kCGWindowOwnerPID")
             if pid is not None:
                 pids.add(int(pid))
     except Exception:
-        return set()
+        pass
     return pids
 
 
