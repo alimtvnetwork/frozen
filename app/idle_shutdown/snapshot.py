@@ -27,13 +27,26 @@ from idle_shutdown.errors import SnapshotError
 logger = logging.getLogger(__name__)
 
 
+def _default_capture_chrome() -> ChromeSession:
+    """Read ``CaptureChromiumVariants`` and dispatch to chrome capture."""
+    include_variants = False
+    try:
+        with connect() as conn:
+            raw = SettingsRepo(conn).get("CaptureChromiumVariants")
+            include_variants = (raw or "false").lower() == "true"
+    except Exception:  # noqa: BLE001
+        # Setting unreadable (DB missing during early startup) → Chrome only.
+        pass
+    return capture_chrome_session(include_variants=include_variants)
+
+
 @dataclass
 class SnapshotProviders:
     """Injection seam used by tests to feed deterministic data."""
 
     capture_desktops_fn: Callable[[], tuple[int, dict[int, int]]] = capture_desktops
     enumerate_apps_fn: Callable[[dict[int, int]], list[AppInfo]] = enumerate_user_apps
-    capture_chrome_fn: Callable[[], ChromeSession] = capture_chrome_session
+    capture_chrome_fn: Callable[[], ChromeSession] = _default_capture_chrome
 
 
 @dataclass(frozen=True)
