@@ -129,12 +129,8 @@ def launch_gui() -> None:  # pragma: no cover - GUI entrypoint
 
     app = _MainWindow(root, tk, ttk)
     app.show("dashboard")
-    # If the service is enabled, the desktop app should begin watching idle
-    # time immediately. Users should not need to press Start before the first
-    # configured prompt can appear.
-    app.start_monitor_if_enabled()
-    # Always-on UI heartbeat: keeps the "time remaining" countdown live
-    # whether or not the monitor is running.
+    # Do NOT auto-start the monitor — the countdown should only begin once
+    # the user explicitly presses "Start monitor" on the sidebar.
     app.start_ui_heartbeat()
     root.mainloop()
 
