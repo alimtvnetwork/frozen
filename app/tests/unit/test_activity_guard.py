@@ -1,4 +1,8 @@
-from idle_shutdown.activity_guard import ActivityGuard, GuardConfig
+from idle_shutdown.activity_guard import (
+    ActivityGuard,
+    GuardConfig,
+    _normalize_media_state,
+)
 
 
 def _guard(signals, *, mic=True, audio=True, fs=True, cam=True):
@@ -69,3 +73,10 @@ def test_camera_signal_can_be_disabled():
         "camera_active": lambda: True,
     }, cam=False)
     assert g.is_busy() == (False, None)
+
+
+def test_media_state_normalization_distinguishes_paused_from_playing():
+    assert _normalize_media_state("playing") is True
+    assert _normalize_media_state("paused") is False
+    assert _normalize_media_state("stopped") is False
+    assert _normalize_media_state("unknown") is None
