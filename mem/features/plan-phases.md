@@ -16,4 +16,4 @@ Follow-ups:
 - Chromium variants (Edge/Brave/Beta/Canary/Chromium) — DONE. Setting `CaptureChromiumVariants` (default false). `ChromeProfile.BrowserName` column with migration. `show` CLI renders Browser column. Variants are captured for inspection only — restore.py still launches primary Chrome with --restore-last-session.
 - Camera-in-use ActivityGuard signal — DONE. Setting `GuardCameraEnabled` (default true). macOS: `ioreg -c AppleCamera`. Windows: webcam ConsentStore registry. Linux: `fuser /dev/video*`. Signal name `camera_active`.
 - Tray/menu-bar icon — TODO.
-- Restore CLI already exists (`idle-shutdown restore`).
+- Restore CLI exists (`idle-shutdown restore`); now also launches Chromium variants (Edge/Brave/Chromium/Beta/Canary) via `detect_variant_executable()` with per-OS exe candidates. Each variant launched with `--restore-last-session` + its tab URLs. RestoreResult.variants_launched lists which ones started.
