@@ -119,19 +119,9 @@ def _mac_pmset_audio_active() -> bool:  # pragma: no cover - platform specific
         ).decode("utf-8", "replace")
     except Exception:
         return False
-    in_listed = False
     for raw in out.splitlines():
         line = raw.strip()
-        if line.startswith("Listed by owning process:"):
-            in_listed = True
-            continue
-        if not in_listed:
-            continue
-        # Stop at the next top-level section.
-        if line and not line.startswith("pid ") and not line.startswith("named:") \
-                and not line.startswith("Details:") and ":" in line and "(" not in line:
-            break
-        if line.startswith("pid ") and "(coreaudiod)" in line and (
+        if "coreaudiod" in line and (
             "PreventUserIdleSystemSleep" in line
             or "PreventUserIdleDisplaySleep" in line
         ):
