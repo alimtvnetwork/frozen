@@ -186,11 +186,12 @@ class CaptureRepo:
 
     def insert_chrome_profile(
         self, snapshot_id: int, profile_dir: str, profile_name: str,
+        browser_name: str = "Chrome",
     ) -> int:
         cur = self.conn.execute(
-            "INSERT INTO ChromeProfile (SnapshotId, ProfileDir, ProfileName) "
-            "VALUES (?, ?, ?)",
-            (snapshot_id, profile_dir, profile_name),
+            "INSERT INTO ChromeProfile (SnapshotId, ProfileDir, ProfileName, BrowserName) "
+            "VALUES (?, ?, ?, ?)",
+            (snapshot_id, profile_dir, profile_name, browser_name),
         )
         return int(cur.lastrowid)
 
