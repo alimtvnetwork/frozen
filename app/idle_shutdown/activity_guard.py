@@ -15,6 +15,8 @@ import logging
 import shutil as _sh
 import subprocess
 import sys
+import ctypes
+import ctypes.util
 from dataclasses import dataclass
 from typing import Callable
 
@@ -76,11 +78,13 @@ def _mac_audio_playback_active() -> bool:  # pragma: no cover - platform specifi
     ``IOAudioEngineState`` via the legacy ``IOAudioEngine`` class — the HAL
     moved to CoreAudio user-space. We check, in order:
 
-    1. ``pmset -g assertions`` for a ``coreaudiod`` PreventUserIdleSystemSleep
-       assertion. coreaudiod takes this assertion any time an output device
-       is actively rendering audio (Music, YouTube/Chrome, VLC, Safari, …).
-    2. Legacy ``ioreg -c IOAudioEngine`` lookup as a fallback for older Macs.
+    1. CoreAudio device state. This releases as soon as playback stops.
+    2. ``pmset -g assertions`` as a fallback when CoreAudio cannot be queried.
+    3. Legacy ``ioreg -c IOAudioEngine`` lookup for older Macs.
     """
+    coreaudio_state = _mac_coreaudio_output_active()
+    if coreaudio_state is not None:
+        return coreaudio_state
     if _mac_pmset_audio_active():
         return True
     if not _sh.which("ioreg"):
@@ -97,6 +101,93 @@ def _mac_audio_playback_active() -> bool:  # pragma: no cover - platform specifi
         if "IOAudioEngineState" in line and line.rstrip().endswith("= 1"):
             return True
     return False
+
+
+def _mac_coreaudio_output_active() -> bool | None:  # pragma: no cover - platform specific
+    """Return output playback state from CoreAudio, or ``None`` if unavailable.
+
+    ``pmset`` can keep a ``coreaudiod`` sleep-prevention assertion around after
+    a browser/player pauses. Querying CoreAudio directly avoids that sticky
+    state, so the monitor can start counting down again after media stops.
+    """
+    path = ctypes.util.find_library("CoreAudio")
+    if not path:
+        path = "/System/Library/Frameworks/CoreAudio.framework/CoreAudio"
+    try:
+        ca = ctypes.CDLL(path)
+    except Exception:
+        return None
+
+    class AudioObjectPropertyAddress(ctypes.Structure):
+        _fields_ = [
+            ("mSelector", ctypes.c_uint32),
+            ("mScope", ctypes.c_uint32),
+            ("mElement", ctypes.c_uint32),
+        ]
+
+    def fourcc(value: bytes) -> int:
+        return int.from_bytes(value, "big")
+
+    system_object = ctypes.c_uint32(1)
+    no_error = 0
+    prop_devices = fourcc(b"dev#")
+    prop_running = fourcc(b"gone")  # kAudioDevicePropertyDeviceIsRunningSomewhere
+    scope_global = fourcc(b"glob")
+    scope_output = fourcc(b"outp")
+    element_main = ctypes.c_uint32(0)
+
+    devices_addr = AudioObjectPropertyAddress(prop_devices, scope_global, element_main.value)
+    data_size = ctypes.c_uint32(0)
+    try:
+        status = ca.AudioObjectGetPropertyDataSize(
+            system_object,
+            ctypes.byref(devices_addr),
+            ctypes.c_uint32(0),
+            None,
+            ctypes.byref(data_size),
+        )
+        if status != no_error or data_size.value <= 0:
+            return None
+        count = data_size.value // ctypes.sizeof(ctypes.c_uint32)
+        devices = (ctypes.c_uint32 * count)()
+        status = ca.AudioObjectGetPropertyData(
+            system_object,
+            ctypes.byref(devices_addr),
+            ctypes.c_uint32(0),
+            None,
+            ctypes.byref(data_size),
+            devices,
+        )
+        if status != no_error:
+            return None
+    except Exception:
+        return None
+
+    saw_readable_output = False
+    for device_id in devices:
+        for scope in (scope_output, scope_global):
+            running_addr = AudioObjectPropertyAddress(
+                prop_running, scope, element_main.value
+            )
+            running = ctypes.c_uint32(0)
+            running_size = ctypes.c_uint32(ctypes.sizeof(running))
+            try:
+                status = ca.AudioObjectGetPropertyData(
+                    ctypes.c_uint32(int(device_id)),
+                    ctypes.byref(running_addr),
+                    ctypes.c_uint32(0),
+                    None,
+                    ctypes.byref(running_size),
+                    ctypes.byref(running),
+                )
+            except Exception:
+                continue
+            if status == no_error:
+                saw_readable_output = True
+                if running.value:
+                    return True
+                break
+    return False if saw_readable_output else None
 
 
 def _mac_pmset_audio_active() -> bool:  # pragma: no cover - platform specific
