@@ -129,11 +129,12 @@ class SettingDef:
 
 SETTING_DEFS: tuple[SettingDef, ...] = (
     SettingDef("IdleThresholdMinutes", "10", _validate_int_range(1, 240), int),
-    SettingDef("PopupCountdownSeconds", "30", _validate_int_range(30, 60), int),
+    SettingDef("PopupCountdownSeconds", "10", _validate_int_range(5, 120), int),
     SettingDef("ServiceState", "Enabled",
                _validate_enum(("Enabled", "Disabled")), str),
     SettingDef("AutoRestoreOnBoot", "true", _validate_bool,
                lambda v: v == "true"),
+    SettingDef("DryRun", "true", _validate_bool, lambda v: v == "true"),
     SettingDef("ChromeExecutablePath", "", _validate_text, str),
     SettingDef("LastRestoredSnapshotId", "0", _validate_int_range(0, 2**31 - 1), int),
     SettingDef("LastRestoredAt", "", _validate_iso8601_or_empty, str),
