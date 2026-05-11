@@ -65,3 +65,33 @@ def show_popup(
 
     _tick()
     root.mainloop()
+
+
+def show_info_popup(title: str, message: str) -> None:  # pragma: no cover - GUI
+    """Modal info popup with a single OK button. Blocks until dismissed.
+
+    Used by dry-run mode to surface "would shut down now" without touching
+    the OS shutdown command.
+    """
+    import tkinter as tk
+
+    root = tk.Tk()
+    root.withdraw()
+    win = tk.Toplevel(root)
+    win.title(title)
+    win.attributes("-topmost", True)
+    win.geometry("460x220")
+
+    tk.Label(win, text=title, font=("Segoe UI", 13, "bold")).pack(pady=(14, 6))
+    body = tk.Label(win, text=message, font=("Segoe UI", 10), justify="left", wraplength=420)
+    body.pack(padx=14, pady=(0, 12))
+
+    def _close() -> None:
+        try:
+            win.destroy()
+        finally:
+            root.destroy()
+
+    win.protocol("WM_DELETE_WINDOW", _close)
+    tk.Button(win, text="OK", width=12, command=_close).pack(pady=(0, 14))
+    root.mainloop()

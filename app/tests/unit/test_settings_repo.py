@@ -20,7 +20,7 @@ def test_set_rejects_out_of_range(temp_db):
         with pytest.raises(ConfigError):
             SettingsRepo(conn).set("IdleThresholdMinutes", 0)
         with pytest.raises(ConfigError):
-            SettingsRepo(conn).set("PopupCountdownSeconds", 10)
+            SettingsRepo(conn).set("PopupCountdownSeconds", 200)
 
 
 def test_set_rejects_unknown_key(temp_db):
