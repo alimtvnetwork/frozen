@@ -154,8 +154,20 @@ class _MainWindow:  # pragma: no cover - GUI
         self.root = root
         self.tk = tk
         self.ttk = ttk
-        self._monitor_thread: threading.Thread | None = None
-        self._monitor_stop: Callable[[], None] | None = None
+        # Monitor state — driven from the Tk main loop via root.after().
+        self._monitor_running: bool = False
+        self._tick_job: Optional[str] = None
+        self._heartbeat_job: Optional[str] = None
+        self._idle_source = None  # built lazily on the main thread
+        self._service = None
+        self._monitor = None
+        self._popup_win = None  # active in-window countdown popup, if any
+
+        # Live status vars — Dashboard binds to these so the countdown
+        # updates every second without rebuilding the panel.
+        self.idle_var = tk.StringVar(value="—")
+        self.remaining_var = tk.StringVar(value="—")
+        self.monitor_state_var = tk.StringVar(value="Stopped")
 
         # Layout: sidebar (left) + content (right)
         self.sidebar = ttk.Frame(root, style="Sidebar.TFrame", width=220)
@@ -218,7 +230,7 @@ class _MainWindow:  # pragma: no cover - GUI
     # ---------- monitor lifecycle ----------
 
     def monitor_running(self) -> bool:
-        return self._monitor_thread is not None and self._monitor_thread.is_alive()
+        return self._monitor_running
 
     def _toggle_monitor(self) -> None:
         if self.monitor_running():
@@ -235,16 +247,58 @@ class _MainWindow:  # pragma: no cover - GUI
                 text="■  Stop monitor",
                 bg=COLORS["err"], activebackground="#ff6b62",
             )
+            self.monitor_state_var.set("Running")
         else:
             self.monitor_btn.configure(
                 text="▶  Start monitor",
                 bg=COLORS["accent"], activebackground=COLORS["accent_hi"],
             )
+            self.monitor_state_var.set("Stopped")
+
+    def _ensure_idle_source(self):
+        if self._idle_source is None:
+            from idle_shutdown.monitor import get_default_idle_source
+            self._idle_source = get_default_idle_source()
+        return self._idle_source
+
+    def _read_idle_ms(self) -> int:
+        try:
+            return int(self._ensure_idle_source().get_idle_ms())
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _threshold_ms(self) -> int:
+        try:
+            return max(1, int(_get_setting("IdleThresholdMinutes"))) * 60_000
+        except Exception:  # noqa: BLE001
+            return 60_000
+
+    @staticmethod
+    def _fmt_ms(ms: int) -> str:
+        s = max(0, ms // 1000)
+        return f"{s // 60:02d}:{s % 60:02d}"
+
+    def start_ui_heartbeat(self) -> None:
+        """1 Hz UI tick — updates idle/remaining labels and (if the monitor
+        is on) drives the IdleMonitor.tick() on the main thread."""
+        self._heartbeat_tick()
+
+    def _heartbeat_tick(self) -> None:
+        idle_ms = self._read_idle_ms()
+        threshold = self._threshold_ms()
+        remaining = max(0, threshold - idle_ms)
+        self.idle_var.set(self._fmt_ms(idle_ms))
+        self.remaining_var.set(self._fmt_ms(remaining))
+        if self._monitor_running and self._monitor is not None:
+            try:
+                self._monitor.tick()
+            except Exception:  # noqa: BLE001
+                logger.exception("monitor tick failed")
+        self._heartbeat_job = self.root.after(1000, self._heartbeat_tick)
 
     def _start_monitor(self) -> None:
-        from idle_shutdown.monitor import IdleMonitor, get_default_idle_source
+        from idle_shutdown.monitor import IdleMonitor
         from idle_shutdown.service import IdleService, ServiceCallbacks
-        from idle_shutdown.popup import show_popup
         from idle_shutdown.snapshot import take_snapshot
         from idle_shutdown.enums import SnapshotTriggerKind
         from tkinter import messagebox
@@ -254,45 +308,113 @@ class _MainWindow:  # pragma: no cover - GUI
                 res = take_snapshot(SnapshotTriggerKind.Auto, record_log=True)
             except Exception as e:  # noqa: BLE001
                 logger.exception("snapshot failed")
-                self.root.after(0, lambda: messagebox.showerror(
-                    "Snapshot failed", str(e)))
+                messagebox.showerror("Snapshot failed", str(e))
                 return
-            # Always dry-run inside the GUI for safety
-            self.root.after(0, lambda: messagebox.showinfo(
+            messagebox.showinfo(
                 "Idle Shutdown — Dry Run",
                 f"Would shut down now.\nSnapshot #{res.snapshot_id} saved\n"
                 f"({res.app_count} apps, {res.chrome_tab_count} tabs).",
-            ))
+            )
 
         callbacks = ServiceCallbacks(
-            show_popup=show_popup,
+            show_popup=self._show_popup_inwindow,
             take_snapshot_and_shutdown=_take_snapshot_and_shutdown,
             get_idle_threshold_minutes=lambda: int(_get_setting("IdleThresholdMinutes")),
             get_popup_countdown_seconds=lambda: int(_get_setting("PopupCountdownSeconds")),
             get_service_enabled=lambda: _get_setting("ServiceState") == "Enabled",
         )
-        service = IdleService(callbacks)
-        monitor = IdleMonitor(
-            source=get_default_idle_source(),
-            threshold_ms_provider=service.threshold_ms,
-            on_threshold=service.on_threshold_reached,
-            on_activity=service.on_activity_during_prompt,
+        self._service = IdleService(callbacks)
+        self._monitor = IdleMonitor(
+            source=self._ensure_idle_source(),
+            threshold_ms_provider=self._service.threshold_ms,
+            on_threshold=self._service.on_threshold_reached,
+            on_activity=self._service.on_activity_during_prompt,
         )
-        self._monitor_stop = monitor.request_stop
-        self._monitor_thread = threading.Thread(
-            target=monitor.run_forever, name="idle-monitor", daemon=True)
-        self._monitor_thread.start()
+        self._monitor_running = True
         logger.info("event=gui_monitor_started")
 
     def _stop_monitor(self) -> None:
-        if self._monitor_stop:
+        self._monitor_running = False
+        self._monitor = None
+        self._service = None
+        self._close_popup()
+        logger.info("event=gui_monitor_stopped")
+
+    # ---------- in-window popup (main-thread safe) ----------
+
+    def _close_popup(self) -> None:
+        if self._popup_win is not None:
             try:
-                self._monitor_stop()
+                self._popup_win.destroy()
             except Exception:  # noqa: BLE001
                 pass
-        self._monitor_thread = None
-        self._monitor_stop = None
-        logger.info("event=gui_monitor_stopped")
+            self._popup_win = None
+
+    def _show_popup_inwindow(self, countdown_seconds: int, on_result) -> None:
+        """Toplevel popup attached to the existing Tk root. Safe on macOS
+        because it runs on the main thread."""
+        from idle_shutdown.enums import PopupResult
+        tk = self.tk
+        if self._popup_win is not None:
+            return
+        win = tk.Toplevel(self.root)
+        self._popup_win = win
+        win.title("Frozen — are you still there?")
+        win.configure(bg=COLORS["panel"])
+        win.attributes("-topmost", True)
+        win.geometry("420x180")
+        win.transient(self.root)
+
+        state = {"remaining_ms": int(countdown_seconds) * 1000,
+                 "done": False, "after": None}
+
+        tk.Label(win, text="Are you still at your desk?",
+                 bg=COLORS["panel"], fg=COLORS["fg"],
+                 font=("Helvetica", 14, "bold")).pack(pady=(20, 6))
+        cd = tk.Label(win, text="", bg=COLORS["panel"], fg=COLORS["fg_muted"],
+                      font=("Helvetica", 11))
+        cd.pack(pady=(0, 12))
+
+        def finish(result) -> None:
+            if state["done"]:
+                return
+            state["done"] = True
+            if state["after"]:
+                try:
+                    win.after_cancel(state["after"])
+                except Exception:  # noqa: BLE001
+                    pass
+            self._close_popup()
+            try:
+                on_result(result)
+            except Exception:  # noqa: BLE001
+                logger.exception("popup result handler failed")
+
+        win.protocol("WM_DELETE_WINDOW", lambda: finish(PopupResult.No))
+
+        btns = tk.Frame(win, bg=COLORS["panel"])
+        btns.pack()
+        tk.Button(btns, text="Yes, I'm here", width=14,
+                  bg=COLORS["accent"], fg="#ffffff", relief="flat", bd=0,
+                  activebackground=COLORS["accent_hi"], cursor="hand2",
+                  command=lambda: finish(PopupResult.Yes)).pack(side="left", padx=8)
+        tk.Button(btns, text="No, shut down", width=14,
+                  bg=COLORS["err"], fg="#ffffff", relief="flat", bd=0,
+                  activebackground="#ff6b62", cursor="hand2",
+                  command=lambda: finish(PopupResult.No)).pack(side="left", padx=8)
+
+        def tick() -> None:
+            if state["done"]:
+                return
+            remaining = state["remaining_ms"]
+            if remaining <= 0:
+                finish(PopupResult.Timeout)
+                return
+            cd.config(text=f"Auto-shutdown in {remaining // 1000}s")
+            state["remaining_ms"] = remaining - 250
+            state["after"] = win.after(250, tick)
+
+        tick()
 
 
 # ---------- panels ----------------------------------------------------------
