@@ -343,3 +343,82 @@ def _enumerate_chromium_variants(e: dict[str, str]) -> list[ChromiumVariant]:
         _add("Chrome Beta", os.path.join(cfg, "google-chrome-beta"))
         _add("Chromium",    os.path.join(cfg, "chromium"))
     return out
+
+
+# ---------- Variant executable detection (used by restore) ------------------
+
+
+def detect_variant_executable(
+    browser_name: str,
+    *,
+    env: dict[str, str] | None = None,
+    exists: Callable[[str], bool] = os.path.exists,
+) -> str | None:
+    """Resolve the executable for a Chromium variant by browser display name.
+
+    Returns ``None`` if no candidate path exists. Caller is expected to skip
+    the launch in that case.
+    """
+    e = env if env is not None else dict(os.environ)
+    candidates = _variant_exe_candidates(browser_name, e)
+    for c in candidates:
+        if c and exists(c):
+            return c
+    return None
+
+
+def _variant_exe_candidates(name: str, e: dict[str, str]) -> list[str]:
+    kind = current_os()
+    home = e.get("HOME") or os.path.expanduser("~")
+    win_local = e.get("LOCALAPPDATA")
+    win_progf = e.get("PROGRAMFILES") or "C:\\Program Files"
+    win_progx = e.get("PROGRAMFILES(X86)") or "C:\\Program Files (x86)"
+
+    def _w(*parts: str) -> str:
+        return _WIN_SEP.join(parts)
+
+    table_win: dict[str, list[str]] = {
+        "Edge": [
+            _w(win_progf, "Microsoft", "Edge", "Application", "msedge.exe"),
+            _w(win_progx, "Microsoft", "Edge", "Application", "msedge.exe"),
+        ],
+        "Brave": [
+            _w(win_progf, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+            _w(win_progx, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+            *( [_w(win_local, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")] if win_local else [] ),
+        ],
+        "Chrome Beta": [
+            _w(win_progf, "Google", "Chrome Beta", "Application", "chrome.exe"),
+            *( [_w(win_local, "Google", "Chrome Beta", "Application", "chrome.exe")] if win_local else [] ),
+        ],
+        "Chrome Canary": [
+            *( [_w(win_local, "Google", "Chrome SxS", "Application", "chrome.exe")] if win_local else [] ),
+        ],
+        "Chromium": [
+            _w(win_progf, "Chromium", "Application", "chrome.exe"),
+            *( [_w(win_local, "Chromium", "Application", "chrome.exe")] if win_local else [] ),
+        ],
+    }
+    table_mac: dict[str, list[str]] = {
+        "Edge":         ["/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
+        "Brave":        ["/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"],
+        "Chrome Beta":  ["/Applications/Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta"],
+        "Chrome Canary":["/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"],
+        "Chromium":     ["/Applications/Chromium.app/Contents/MacOS/Chromium"],
+    }
+    table_linux: dict[str, list[str]] = {
+        "Edge":         ["/usr/bin/microsoft-edge", "/usr/bin/microsoft-edge-stable"],
+        "Brave":        ["/usr/bin/brave-browser", "/usr/bin/brave", "/snap/bin/brave"],
+        "Chrome Beta":  ["/usr/bin/google-chrome-beta"],
+        "Chromium":     ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/snap/bin/chromium"],
+    }
+    if kind is OSKind.Windows:
+        return table_win.get(name, [])
+    if kind is OSKind.MacOS:
+        # Also accept ~/Applications variants.
+        out = list(table_mac.get(name, []))
+        out += [os.path.expanduser("~" + p) for p in out if p.startswith("/Applications/")]
+        return out
+    if kind is OSKind.Linux:
+        return table_linux.get(name, [])
+    return []

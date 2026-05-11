@@ -31,6 +31,7 @@ from typing import Callable, Iterable, Optional
 from idle_shutdown.db.connection import connect, utc_now_iso
 from idle_shutdown.db.repos import SettingsRepo
 from idle_shutdown.errors import RestoreError
+from idle_shutdown.capture.chrome import detect_variant_executable
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +51,20 @@ class TabRow:
 
 
 @dataclass(frozen=True)
+class BrowserSession:
+    browser_name: str
+    executable_path: str | None
+    tabs: tuple[TabRow, ...]
+
+
+@dataclass(frozen=True)
 class SnapshotData:
     snapshot_id: int
     desktop_count: int
     apps: tuple[AppRow, ...]
     chrome_executable: str | None
     chrome_tabs: tuple[TabRow, ...]
+    variant_sessions: tuple[BrowserSession, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -96,12 +105,32 @@ def _read_snapshot(snapshot_id: int | None) -> SnapshotData:
             (sid,),
         ).fetchall()
         tab_rows = conn.execute(
-            "SELECT t.Url, t.Title FROM ChromeTab t "
+            "SELECT t.Url, t.Title, "
+            "       COALESCE(p.BrowserName, 'Chrome') AS BrowserName "
+            "FROM ChromeTab t "
             "JOIN ChromeWindow w ON w.ChromeWindowId = t.ChromeWindowId "
-            "WHERE w.SnapshotId = ? ORDER BY w.WindowIndex, t.TabIndex",
+            "LEFT JOIN ChromeProfile p ON p.ChromeProfileId = w.ChromeProfileId "
+            "WHERE w.SnapshotId = ? ORDER BY p.BrowserName, w.WindowIndex, t.TabIndex",
             (sid,),
         ).fetchall()
         chrome_exe = SettingsRepo(conn).get_raw("ChromeExecutablePath") or None
+
+    # Split tabs by browser. Anything labelled "Chrome" (or unlabelled,
+    # legacy rows) goes into the primary chrome_tabs list. The rest become
+    # one BrowserSession per browser, in stable alphabetical order.
+    by_browser: dict[str, list[TabRow]] = {}
+    for r in tab_rows:
+        bname = str(r["BrowserName"]) or "Chrome"
+        by_browser.setdefault(bname, []).append(TabRow(str(r["Url"]), str(r["Title"])))
+    chrome_tabs = tuple(by_browser.pop("Chrome", []))
+    variants = tuple(
+        BrowserSession(
+            browser_name=name,
+            executable_path=detect_variant_executable(name),
+            tabs=tuple(tabs),
+        )
+        for name, tabs in sorted(by_browser.items())
+    )
 
     return SnapshotData(
         snapshot_id=sid,
@@ -113,7 +142,8 @@ def _read_snapshot(snapshot_id: int | None) -> SnapshotData:
             desktop_index=int(r["DesktopIndex"]),
         ) for r in apps_rows),
         chrome_executable=chrome_exe,
-        chrome_tabs=tuple(TabRow(str(r["Url"]), str(r["Title"])) for r in tab_rows),
+        chrome_tabs=chrome_tabs,
+        variant_sessions=variants,
     )
 
 
@@ -225,6 +255,7 @@ class RestoreResult:
     apps_launched: int
     apps_skipped: int
     chrome_launched: bool
+    variants_launched: tuple[str, ...] = ()
 
 
 def restore(
@@ -298,6 +329,31 @@ def restore(
             except Exception as e:  # noqa: BLE001
                 logger.warning("event=restore_item exe=chrome status=failed err=%s", e)
 
+    variants_launched: list[str] = []
+    for v in data.variant_sessions:
+        if not v.executable_path:
+            logger.warning(
+                "event=restore_variant_skipped browser=%s reason=exe_not_found tabs=%d",
+                v.browser_name, len(v.tabs),
+            )
+            continue
+        if _is_duplicate(AppRow(v.executable_path, None, None, 0), live):
+            logger.info("event=skip_relaunch exe=%s reason=already_running",
+                        v.executable_path)
+            continue
+        argv = [v.executable_path, "--restore-last-session"]
+        argv.extend(t.url for t in v.tabs)
+        try:
+            spawn_fn(argv, None)
+            variants_launched.append(v.browser_name)
+            logger.info(
+                "event=restore_item browser=%s status=launched tabs=%d",
+                v.browser_name, len(v.tabs),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("event=restore_item browser=%s status=failed err=%s",
+                           v.browser_name, e)
+
     with connect() as conn:
         repo = SettingsRepo(conn)
         repo.set("LastRestoredSnapshotId", data.snapshot_id)
@@ -310,4 +366,5 @@ def restore(
         apps_launched=launched,
         apps_skipped=skipped,
         chrome_launched=chrome_launched,
+        variants_launched=tuple(variants_launched),
     )
