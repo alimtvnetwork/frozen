@@ -83,3 +83,36 @@ def test_consecutive_failures_escalate_to_monitor_error():
     import pytest
     with pytest.raises(MonitorError):
         mon.tick()
+
+
+def test_busy_guard_suppresses_threshold_fire():
+    src = StubIdleSource(60_000)
+    rec = _Recorder()
+    mon = IdleMonitor(
+        source=src,
+        threshold_ms_provider=lambda: 60_000,
+        on_threshold=lambda: setattr(rec, "threshold", rec.threshold + 1),
+        on_activity=lambda: setattr(rec, "activity", rec.activity + 1),
+        is_busy=lambda: (True, "mic_active"),
+    )
+    mon.tick()
+    assert rec.threshold == 0
+    assert mon.prompting is False
+
+
+def test_busy_guard_releases_when_no_longer_busy():
+    src = StubIdleSource(60_000)
+    busy = {"v": True}
+    rec = _Recorder()
+    mon = IdleMonitor(
+        source=src,
+        threshold_ms_provider=lambda: 60_000,
+        on_threshold=lambda: setattr(rec, "threshold", rec.threshold + 1),
+        on_activity=lambda: setattr(rec, "activity", rec.activity + 1),
+        is_busy=lambda: (busy["v"], "audio_playing" if busy["v"] else None),
+    )
+    mon.tick()
+    assert rec.threshold == 0
+    busy["v"] = False
+    mon.tick()
+    assert rec.threshold == 1
