@@ -118,6 +118,7 @@ class IdleMonitor:
         on_activity: Callable[[], None],
         poll_interval_s: float = 1.0,
         sleeper: Callable[[float], None] = time.sleep,
+        is_busy: Callable[[], tuple[bool, str | None]] | None = None,
     ) -> None:
         self._source = source
         self._threshold_ms_provider = threshold_ms_provider
@@ -125,6 +126,7 @@ class IdleMonitor:
         self._on_activity = on_activity
         self._poll_interval_s = poll_interval_s
         self._sleeper = sleeper
+        self._is_busy = is_busy or (lambda: (False, None))
         self._prompting = False
         self._consecutive_failures = 0
         self._stop = False
@@ -152,6 +154,13 @@ class IdleMonitor:
 
         threshold_ms = self._threshold_ms_provider()
         if idle_ms >= threshold_ms and not self._prompting:
+            try:
+                busy, _reason = self._is_busy()
+            except Exception:  # noqa: BLE001
+                busy = False
+            if busy:
+                # Treat the user as active: do not prompt, do not flip state.
+                return
             self._prompting = True
             self._on_threshold()
         elif idle_ms < threshold_ms and self._prompting:
