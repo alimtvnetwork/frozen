@@ -182,6 +182,12 @@ if [ ! -f "$HOME/.local/share/IdleShutdownRestore/IdleShutdown.db" ]; then
   idle-shutdown init-db || true
 fi
 
+# `-i` (install only) — stop here after install + tests
+if [ "$INSTALL_ONLY" = "1" ]; then
+  log "${C_GRN}Install complete.${C_RST} Run ${C_CYA}./run.sh -d${C_RST} to launch the GUI."
+  exit 0
+fi
+
 log "${C_GRN}All done.${C_RST}"
 cat <<EOF
 
@@ -196,4 +202,6 @@ No more activating the venv. Just run:
   ${C_CYA}./run.sh history${C_RST}                      shutdown history
   ${C_CYA}./run.sh --help${C_RST}                       full CLI help
   ${C_CYA}./run.sh --setup${C_RST}                      force re-install + re-run tests
+  ${C_CYA}./run.sh -i${C_RST}                           install / refresh dependencies
+  ${C_CYA}./run.sh -d${C_RST}                           deploy: launch the desktop UI
 EOF
