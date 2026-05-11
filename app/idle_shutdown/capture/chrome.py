@@ -292,3 +292,54 @@ def _chrome_user_data_root(exe: str, e: dict[str, str]) -> str | None:
     if win_local:
         return _WIN_SEP.join([win_local, "Google", "Chrome", "User Data"])
     return None
+
+
+# ---------- Chromium variants (Edge, Brave, Chrome Beta/Canary, Chromium) ---
+
+
+@dataclass(frozen=True)
+class ChromiumVariant:
+    browser_name: str
+    user_data_root: str
+
+
+def _enumerate_chromium_variants(e: dict[str, str]) -> list[ChromiumVariant]:
+    """Return user-data roots for known Chromium-based browsers.
+
+    Only path candidates that are non-empty strings are returned; existence
+    check is done by the caller so test fakes can decide.
+    """
+    kind = current_os()
+    home = e.get("HOME") or os.path.expanduser("~")
+    win_local = e.get("LOCALAPPDATA")
+
+    def _join_win(*parts: str) -> str:
+        return _WIN_SEP.join(parts)
+
+    out: list[ChromiumVariant] = []
+
+    def _add(name: str, path: str | None) -> None:
+        if path:
+            out.append(ChromiumVariant(browser_name=name, user_data_root=path))
+
+    if kind is OSKind.Windows:
+        if win_local:
+            _add("Edge",         _join_win(win_local, "Microsoft", "Edge", "User Data"))
+            _add("Brave",        _join_win(win_local, "BraveSoftware", "Brave-Browser", "User Data"))
+            _add("Chrome Beta",  _join_win(win_local, "Google", "Chrome Beta", "User Data"))
+            _add("Chrome Canary",_join_win(win_local, "Google", "Chrome SxS", "User Data"))
+            _add("Chromium",     _join_win(win_local, "Chromium", "User Data"))
+    elif kind is OSKind.MacOS:
+        appsup = os.path.join(home, "Library", "Application Support")
+        _add("Edge",         os.path.join(appsup, "Microsoft Edge"))
+        _add("Brave",        os.path.join(appsup, "BraveSoftware", "Brave-Browser"))
+        _add("Chrome Beta",  os.path.join(appsup, "Google", "Chrome Beta"))
+        _add("Chrome Canary",os.path.join(appsup, "Google", "Chrome Canary"))
+        _add("Chromium",     os.path.join(appsup, "Chromium"))
+    elif kind is OSKind.Linux:
+        cfg = os.path.join(home, ".config")
+        _add("Edge",        os.path.join(cfg, "microsoft-edge"))
+        _add("Brave",       os.path.join(cfg, "BraveSoftware", "Brave-Browser"))
+        _add("Chrome Beta", os.path.join(cfg, "google-chrome-beta"))
+        _add("Chromium",    os.path.join(cfg, "chromium"))
+    return out
