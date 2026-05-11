@@ -1,7 +1,9 @@
 import pytest
 
 from idle_shutdown.capture.apps import AppInfo
-from idle_shutdown.capture.chrome import ChromeSession, ChromeTabInfo, ChromeWindowInfo
+from idle_shutdown.capture.chrome import (
+    ChromeProfileInfo, ChromeSession, ChromeTabInfo, ChromeWindowInfo,
+)
 from idle_shutdown.db.connection import connect, init_db
 from idle_shutdown.db.repos import ShutdownCounterRepo, ShutdownLogRepo
 from idle_shutdown.enums import ShutdownOutcomeStatus, SnapshotTriggerKind
@@ -16,10 +18,13 @@ def _providers(*, desktops=2, apps=None, chrome=None, fail_in=None):
     ]
     chrome = chrome if chrome is not None else ChromeSession(
         executable_path="C:\\Apps\\chrome.exe",
-        windows=(ChromeWindowInfo(tabs=(
-            ChromeTabInfo("https://a", "A"),
-            ChromeTabInfo("https://b", "B"),
-        )),),
+        profiles=(ChromeProfileInfo(
+            profile_dir="Default", profile_name="Default",
+            windows=(ChromeWindowInfo(tabs=(
+                ChromeTabInfo("https://a", "A"),
+                ChromeTabInfo("https://b", "B"),
+            )),),
+        ),),
     )
 
     def _desktops():

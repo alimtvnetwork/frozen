@@ -15,6 +15,7 @@ from idle_shutdown import cli as cli_mod
 from idle_shutdown.capture.apps import AppInfo
 from idle_shutdown.capture.chrome import (
     ChromeSession,
+    ChromeProfileInfo,
     ChromeTabInfo,
     ChromeWindowInfo,
 )
@@ -60,9 +61,12 @@ def test_full_cli_flow(runner, monkeypatch):
     ]
     fake_chrome = ChromeSession(
         executable_path="C:\\Apps\\chrome.exe",
-        windows=(ChromeWindowInfo(tabs=(
-            ChromeTabInfo("https://example.com/", "Example"),
-        )),),
+        profiles=(ChromeProfileInfo(
+            profile_dir="Default", profile_name="Default",
+            windows=(ChromeWindowInfo(tabs=(
+                ChromeTabInfo("https://example.com/", "Example"),
+            )),),
+        ),),
     )
     OriginalProviders = snap_mod.SnapshotProviders
 
