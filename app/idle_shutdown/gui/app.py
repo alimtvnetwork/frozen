@@ -206,6 +206,7 @@ class _MainWindow:  # pragma: no cover - GUI
         self._monitor = None
         self._activity_guard = None
         self._popup_win = None  # active in-window countdown popup, if any
+        self._popup_state = None
 
         # Live status vars — Dashboard binds to these so the countdown
         # updates every second without rebuilding the panel.
@@ -364,6 +365,7 @@ class _MainWindow:  # pragma: no cover - GUI
             busy = bool(getattr(self._monitor, "busy", False))
             busy_reason = getattr(self._monitor, "busy_reason", None)
             if busy:
+                self._close_popup()
                 self.idle_var.set("Paused")
                 self.remaining_var.set("Paused")
                 self.busy_reason_var.set(self._busy_label(busy_reason))
