@@ -375,6 +375,8 @@ def cmd_restore(snapshot_id: Optional[int]) -> None:
         f"restored snapshot {result.snapshot_id}: "
         f"launched={result.apps_launched} skipped={result.apps_skipped} "
         f"chrome={'yes' if result.chrome_launched else 'no'}"
+        + (f" variants={','.join(result.variants_launched)}"
+           if result.variants_launched else "")
     )
 
 
