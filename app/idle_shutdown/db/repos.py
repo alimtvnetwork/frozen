@@ -165,10 +165,24 @@ class CaptureRepo:
         )
         return int(cur.lastrowid)
 
-    def insert_chrome_window(self, snapshot_id: int, index: int) -> int:
+    def insert_chrome_profile(
+        self, snapshot_id: int, profile_dir: str, profile_name: str,
+    ) -> int:
         cur = self.conn.execute(
-            "INSERT INTO ChromeWindow (SnapshotId, WindowIndex) VALUES (?, ?)",
-            (snapshot_id, index),
+            "INSERT INTO ChromeProfile (SnapshotId, ProfileDir, ProfileName) "
+            "VALUES (?, ?, ?)",
+            (snapshot_id, profile_dir, profile_name),
+        )
+        return int(cur.lastrowid)
+
+    def insert_chrome_window(
+        self, snapshot_id: int, index: int,
+        chrome_profile_id: int | None = None,
+    ) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO ChromeWindow (SnapshotId, WindowIndex, ChromeProfileId) "
+            "VALUES (?, ?, ?)",
+            (snapshot_id, index, chrome_profile_id),
         )
         return int(cur.lastrowid)
 

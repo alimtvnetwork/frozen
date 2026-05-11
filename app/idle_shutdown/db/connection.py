@@ -49,6 +49,8 @@ def init_db(path: Path | None = None) -> Path:
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.execute("PRAGMA journal_mode = WAL;")
         conn.executescript(_read_schema())
+        # Additive migrations for DBs created before Phase 3.
+        _migrate_chrome_profile(conn)
         now = utc_now_iso()
         # Seed default settings (idempotent)
         for s in SETTING_DEFS:
@@ -68,3 +70,13 @@ def init_db(path: Path | None = None) -> Path:
     finally:
         conn.close()
     return target
+
+
+def _migrate_chrome_profile(conn: sqlite3.Connection) -> None:
+    """Backfill ``ChromeWindow.ChromeProfileId`` on legacy DBs."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(ChromeWindow)").fetchall()}
+    if "ChromeProfileId" not in cols:
+        # SQLite ALTER TABLE ADD COLUMN cannot add a REFERENCES clause to
+        # an existing table; we add the column without the FK. Snapshot
+        # writes still go through CaptureRepo and remain consistent.
+        conn.execute("ALTER TABLE ChromeWindow ADD COLUMN ChromeProfileId INTEGER")

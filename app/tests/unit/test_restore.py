@@ -1,7 +1,9 @@
 import pytest
 
 from idle_shutdown.capture.apps import AppInfo
-from idle_shutdown.capture.chrome import ChromeSession, ChromeTabInfo, ChromeWindowInfo
+from idle_shutdown.capture.chrome import (
+    ChromeProfileInfo, ChromeSession, ChromeTabInfo, ChromeWindowInfo,
+)
 from idle_shutdown.db.connection import connect, init_db
 from idle_shutdown.db.repos import SettingsRepo
 from idle_shutdown.enums import SnapshotTriggerKind
@@ -18,11 +20,14 @@ def _seed_snapshot(*, with_chrome=True, desktop_count=1, app_desktops=(0, 0)):
     chrome = (
         ChromeSession(
             executable_path="C:\\Apps\\chrome.exe",
-            windows=(ChromeWindowInfo(tabs=(
-                ChromeTabInfo("https://a", "A"),
-                ChromeTabInfo("https://b", "B"),
-            )),),
-        ) if with_chrome else ChromeSession(executable_path=None, windows=())
+            profiles=(ChromeProfileInfo(
+                profile_dir="Default", profile_name="Default",
+                windows=(ChromeWindowInfo(tabs=(
+                    ChromeTabInfo("https://a", "A"),
+                    ChromeTabInfo("https://b", "B"),
+                )),),
+            ),),
+        ) if with_chrome else ChromeSession(executable_path=None, profiles=())
     )
     providers = SnapshotProviders(
         capture_desktops_fn=lambda: (desktop_count, {}),

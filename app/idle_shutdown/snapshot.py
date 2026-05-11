@@ -41,6 +41,7 @@ class SnapshotResult:
     snapshot_id: int
     desktop_count: int
     app_count: int
+    chrome_profile_count: int
     chrome_window_count: int
     chrome_tab_count: int
 
@@ -81,16 +82,24 @@ def take_snapshot(
                 )
 
             chrome = p.capture_chrome_fn()
+            chrome_windows_total = 0
             chrome_tabs_total = 0
-            for w_idx, win in enumerate(chrome.windows):
-                cw_id = cap_repo.insert_chrome_window(snapshot_id, w_idx)
-                tabs = [
-                    (t_idx, tab.url, tab.title, tab.group)
-                    for t_idx, tab in enumerate(win.tabs)
-                ]
-                chrome_tabs_total += len(tabs)
-                if tabs:
-                    cap_repo.insert_chrome_tabs(cw_id, tabs)
+            for prof in chrome.profiles:
+                profile_id = cap_repo.insert_chrome_profile(
+                    snapshot_id, prof.profile_dir, prof.profile_name,
+                )
+                for w_idx, win in enumerate(prof.windows):
+                    cw_id = cap_repo.insert_chrome_window(
+                        snapshot_id, w_idx, chrome_profile_id=profile_id,
+                    )
+                    chrome_windows_total += 1
+                    tabs = [
+                        (t_idx, tab.url, tab.title, tab.group)
+                        for t_idx, tab in enumerate(win.tabs)
+                    ]
+                    chrome_tabs_total += len(tabs)
+                    if tabs:
+                        cap_repo.insert_chrome_tabs(cw_id, tabs)
 
             # Cache last-detected Chrome path
             if chrome.executable_path:
@@ -101,14 +110,17 @@ def take_snapshot(
                 ShutdownCounterRepo(conn).increment()
             conn.execute("COMMIT")
             logger.info(
-                "event=snapshot_committed snapshot_id=%d apps=%d chrome_windows=%d chrome_tabs=%d",
-                snapshot_id, len(apps), len(chrome.windows), chrome_tabs_total,
+                "event=snapshot_committed snapshot_id=%d apps=%d chrome_profiles=%d "
+                "chrome_windows=%d chrome_tabs=%d",
+                snapshot_id, len(apps), len(chrome.profiles),
+                chrome_windows_total, chrome_tabs_total,
             )
             return SnapshotResult(
                 snapshot_id=snapshot_id,
                 desktop_count=max(1, desktop_count),
                 app_count=len(apps),
-                chrome_window_count=len(chrome.windows),
+                chrome_profile_count=len(chrome.profiles),
+                chrome_window_count=chrome_windows_total,
                 chrome_tab_count=chrome_tabs_total,
             )
     except Exception as e:  # noqa: BLE001

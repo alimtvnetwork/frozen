@@ -159,7 +159,8 @@ def cmd_run(silent: bool, dry_run_flag: Optional[bool]) -> None:  # noqa: ARG001
                 f"DRY RUN — your system would shut down now.\n\n"
                 f"Snapshot #{res.snapshot_id} saved to the database:\n"
                 f"  • {res.app_count} application(s)\n"
-                f"  • {res.chrome_window_count} Chrome window(s), "
+                f"  • {res.chrome_profile_count} Chrome profile(s), "
+                f"{res.chrome_window_count} window(s), "
                 f"{res.chrome_tab_count} tab(s)\n"
                 f"  • {res.desktop_count} virtual desktop(s)\n\n"
                 f"Nothing was closed. Click OK to dismiss."
@@ -208,7 +209,8 @@ def cmd_snapshot() -> None:
     result = take_snapshot(SnapshotTriggerKind.Manual, record_log=False)
     click.echo(
         f"snapshot {result.snapshot_id}: desktops={result.desktop_count} "
-        f"apps={result.app_count} chrome_windows={result.chrome_window_count} "
+        f"apps={result.app_count} chrome_profiles={result.chrome_profile_count} "
+        f"chrome_windows={result.chrome_window_count} "
         f"chrome_tabs={result.chrome_tab_count}"
     )
 
