@@ -8,6 +8,8 @@ Requires-Dist: rich>=13.7
 Requires-Dist: psutil>=5.9
 Requires-Dist: pywin32>=306; sys_platform == "win32"
 Requires-Dist: pyvda>=0.4; sys_platform == "win32"
+Requires-Dist: pyobjc-framework-Quartz>=10.0; sys_platform == "darwin"
+Requires-Dist: pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: pytest-cov>=5.0; extra == "dev"

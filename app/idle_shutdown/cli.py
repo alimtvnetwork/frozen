@@ -52,6 +52,13 @@ def cmd_init_db() -> None:
     click.echo(f"Initialized database at {path}")
 
 
+@cli.command("gui")
+def cmd_gui() -> None:
+    """Launch the desktop UI (sidebar window with Settings, Snapshots, Status)."""
+    from idle_shutdown.gui import launch_gui
+    launch_gui()
+
+
 # ----- settings --------------------------------------------------------------
 
 

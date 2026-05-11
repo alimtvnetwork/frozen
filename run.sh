@@ -6,6 +6,8 @@
 #   ./run.sh run              # `idle-shutdown run`
 #   ./run.sh <any subcmd ...> # any other CLI subcommand, args pass through
 #   ./run.sh --setup          # force re-run of setup + tests
+#   ./run.sh -i               # install/refresh dependencies only (no tests, no run)
+#   ./run.sh -d               # deploy: install if needed, then launch the GUI window
 # The venv is created/reused automatically; you never need to `source` it.
 
 set -u
@@ -28,8 +30,17 @@ CONFIG="$SCRIPT_DIR/run.config.json"
 
 # ---------- arg parsing ----------
 FORCE_SETUP=0
+INSTALL_ONLY=0
+DEPLOY_GUI=0
 if [ "${1:-}" = "--setup" ]; then FORCE_SETUP=1; shift; fi
+if [ "${1:-}" = "-i" ] || [ "${1:-}" = "--install" ]; then INSTALL_ONLY=1; FORCE_SETUP=1; shift; fi
+if [ "${1:-}" = "-d" ] || [ "${1:-}" = "--deploy" ]; then DEPLOY_GUI=1; shift; fi
 CLI_ARGS=("$@")  # everything else is forwarded to idle-shutdown
+
+# -d implies: launch the GUI after setup
+if [ "$DEPLOY_GUI" = "1" ]; then
+  CLI_ARGS=("gui")
+fi
 
 # ---------- minimal JSON reader (python) ----------
 jget() { python3 -c "import json,sys;d=json.load(open('$CONFIG'));k='$1'.split('.');v=d
@@ -171,6 +182,12 @@ if [ ! -f "$HOME/.local/share/IdleShutdownRestore/IdleShutdown.db" ]; then
   idle-shutdown init-db || true
 fi
 
+# `-i` (install only) — stop here after install + tests
+if [ "$INSTALL_ONLY" = "1" ]; then
+  log "${C_GRN}Install complete.${C_RST} Run ${C_CYA}./run.sh -d${C_RST} to launch the GUI."
+  exit 0
+fi
+
 log "${C_GRN}All done.${C_RST}"
 cat <<EOF
 
@@ -185,4 +202,6 @@ No more activating the venv. Just run:
   ${C_CYA}./run.sh history${C_RST}                      shutdown history
   ${C_CYA}./run.sh --help${C_RST}                       full CLI help
   ${C_CYA}./run.sh --setup${C_RST}                      force re-install + re-run tests
+  ${C_CYA}./run.sh -i${C_RST}                           install / refresh dependencies
+  ${C_CYA}./run.sh -d${C_RST}                           deploy: launch the desktop UI
 EOF

@@ -5,15 +5,22 @@
 #   .\run.ps1 run                     # real idle monitor
 #   .\run.ps1 <any subcmd ...>        # any other CLI subcommand, args pass through
 #   .\run.ps1 -Setup                  # force re-run of setup + tests
+#   .\run.ps1 -i                      # install/refresh deps only (no tests, no run)
+#   .\run.ps1 -d                      # deploy: install if needed, then launch the GUI
 # The venv is created/reused automatically; you never need to activate it.
 
 param(
     [switch]$Setup,
+    [Alias("i")][switch]$Install,
+    [Alias("d")][switch]$Deploy,
     [Parameter(ValueFromRemainingArguments=$true)]
     [string[]]$CliArgs
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($Install) { $Setup = $true }
+if ($Deploy)  { $CliArgs = @("gui") }
 
 function Write-Step($msg)  { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg)    { Write-Host "  ✓ $msg" -ForegroundColor Green }
@@ -182,6 +189,11 @@ try {
         Write-Step "Initializing database"
         & idle-shutdown init-db
     }
+
+    if ($Install) {
+        Write-Ok "Install complete. Run .\run.ps1 -d to launch the GUI."
+        exit 0
+    }
 }
 finally { Pop-Location }
 
@@ -198,3 +210,5 @@ Write-Host "  .\run.ps1 settings set-idle 1        " -ForegroundColor Cyan -NoNe
 Write-Host "  .\run.ps1 history                    " -ForegroundColor Cyan -NoNewline; Write-Host "shutdown history"
 Write-Host "  .\run.ps1 --help                     " -ForegroundColor Cyan -NoNewline; Write-Host "full CLI help"
 Write-Host "  .\run.ps1 -Setup                     " -ForegroundColor Cyan -NoNewline; Write-Host "force re-install + re-run tests"
+Write-Host "  .\run.ps1 -i                         " -ForegroundColor Cyan -NoNewline; Write-Host "install / refresh dependencies"
+Write-Host "  .\run.ps1 -d                         " -ForegroundColor Cyan -NoNewline; Write-Host "deploy: launch the desktop UI"
