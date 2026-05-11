@@ -29,6 +29,7 @@ class GuardConfig:
     mic_enabled: bool = True
     audio_enabled: bool = True
     fullscreen_enabled: bool = True
+    camera_enabled: bool = True
 
 
 # ---------- macOS signals ---------------------------------------------------
@@ -124,6 +125,31 @@ def _mac_foreground_fullscreen() -> bool:  # pragma: no cover - platform specifi
     return False
 
 
+def _mac_camera_in_use() -> bool:  # pragma: no cover - platform specific
+    """True when the system video-input device reports IsRunning=1.
+
+    Uses ``ioreg`` (always present on macOS); cheap and avoids a pyobjc
+    dependency. Looks for ``"CMIO_DAL_VDevice_IsRunning" = 1`` lines
+    emitted by the AppleCamera / VirtualCamera providers.
+    """
+    if not _sh.which("ioreg"):
+        return False
+    try:
+        out = subprocess.check_output(
+            ["ioreg", "-r", "-c", "AppleCamera", "-l"],
+            timeout=2, stderr=subprocess.DEVNULL,
+        ).decode("utf-8", "replace")
+    except Exception:
+        return False
+    for line in out.splitlines():
+        s = line.strip()
+        if s.startswith('"CMIO_Control_IsRunning"') and s.endswith("= 1"):
+            return True
+        if "VDCAssistant_Camera_Is_On" in s and s.endswith("= 1"):
+            return True
+    return False
+
+
 # ---------- Linux signals ---------------------------------------------------
 
 
@@ -170,6 +196,20 @@ def _linux_foreground_fullscreen() -> bool:  # pragma: no cover
         except Exception:
             return False
     return False
+
+
+def _linux_camera_in_use() -> bool:  # pragma: no cover
+    """True when any process holds /dev/video* open (best-effort)."""
+    if not _sh.which("fuser"):
+        return False
+    try:
+        out = subprocess.check_output(
+            ["sh", "-c", "fuser /dev/video* 2>/dev/null"],
+            timeout=2,
+        ).decode("utf-8", "replace")
+    except Exception:
+        return False
+    return out.strip() != ""
 
 
 # ---------- Windows signals -------------------------------------------------
@@ -253,6 +293,35 @@ def _win_foreground_fullscreen() -> bool:  # pragma: no cover
         from ctypes import wintypes
     except Exception:
         return False
+
+
+def _win_camera_in_use() -> bool:  # pragma: no cover
+    """Mirror of mic detection but for the webcam ConsentStore key."""
+    try:
+        import winreg  # type: ignore
+    except Exception:
+        return False
+    roots = (
+        (winreg.HKEY_CURRENT_USER,
+         r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam"),
+        (winreg.HKEY_LOCAL_MACHINE,
+         r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam"),
+    )
+    for hive, path in roots:
+        try:
+            with winreg.OpenKey(hive, path) as base:
+                i = 0
+                while True:
+                    try:
+                        sub = winreg.EnumKey(base, i)
+                    except OSError:
+                        break
+                    i += 1
+                    if _win_subkey_recording(hive, path + "\\" + sub):
+                        return True
+        except OSError:
+            continue
+    return False
     try:
         user32 = ctypes.windll.user32
         hwnd = user32.GetForegroundWindow()
@@ -276,18 +345,21 @@ def _platform_signals() -> dict[str, Signal]:
             "mic_active": _mac_mic_in_use,
             "audio_playing": _mac_audio_playback_active,
             "fullscreen": _mac_foreground_fullscreen,
+            "camera_active": _mac_camera_in_use,
         }
     if sys.platform == "win32":
         return {
             "mic_active": _win_mic_in_use,
             "audio_playing": _win_audio_playback_active,
             "fullscreen": _win_foreground_fullscreen,
+            "camera_active": _win_camera_in_use,
         }
     if sys.platform.startswith("linux"):
         return {
             "mic_active": _linux_mic_in_use,
             "audio_playing": _linux_audio_playback_active,
             "fullscreen": _linux_foreground_fullscreen,
+            "camera_active": _linux_camera_in_use,
         }
     return {}
 
@@ -317,6 +389,8 @@ class ActivityGuard:
             if name == "audio_playing" and not cfg.audio_enabled:
                 continue
             if name == "fullscreen" and not cfg.fullscreen_enabled:
+                continue
+            if name == "camera_active" and not cfg.camera_enabled:
                 continue
             out.append((name, sig))
         return out
