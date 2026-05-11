@@ -128,12 +128,22 @@ class IdleMonitor:
         self._sleeper = sleeper
         self._is_busy = is_busy or (lambda: (False, None))
         self._prompting = False
+        self._busy = False
+        self._busy_reason: str | None = None
         self._consecutive_failures = 0
         self._stop = False
 
     @property
     def prompting(self) -> bool:
         return self._prompting
+
+    @property
+    def busy(self) -> bool:
+        return self._busy
+
+    @property
+    def busy_reason(self) -> str | None:
+        return self._busy_reason
 
     def mark_prompting(self, value: bool) -> None:
         self._prompting = value
@@ -153,14 +163,20 @@ class IdleMonitor:
             return
 
         threshold_ms = self._threshold_ms_provider()
+        try:
+            self._busy, self._busy_reason = self._is_busy()
+        except Exception:  # noqa: BLE001
+            self._busy, self._busy_reason = False, None
+
+        if self._busy:
+            # Media/calls/fullscreen activity means the user is occupied even
+            # if keyboard/mouse idle time is high. Do not count toward prompt.
+            if self._prompting:
+                self._prompting = False
+                self._on_activity()
+            return
+
         if idle_ms >= threshold_ms and not self._prompting:
-            try:
-                busy, _reason = self._is_busy()
-            except Exception:  # noqa: BLE001
-                busy = False
-            if busy:
-                # Treat the user as active: do not prompt, do not flip state.
-                return
             self._prompting = True
             self._on_threshold()
         elif idle_ms < threshold_ms and self._prompting:
