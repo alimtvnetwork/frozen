@@ -118,6 +118,7 @@ class IdleMonitor:
         on_activity: Callable[[], None],
         poll_interval_s: float = 1.0,
         sleeper: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = time.monotonic,
         is_busy: Callable[[], tuple[bool, str | None]] | None = None,
     ) -> None:
         self._source = source
@@ -126,10 +127,13 @@ class IdleMonitor:
         self._on_activity = on_activity
         self._poll_interval_s = poll_interval_s
         self._sleeper = sleeper
+        self._clock = clock
         self._is_busy = is_busy or (lambda: (False, None))
         self._prompting = False
         self._busy = False
         self._busy_reason: str | None = None
+        self._last_busy_at: float | None = None
+        self._last_effective_idle_ms = 0
         self._consecutive_failures = 0
         self._stop = False
 
@@ -144,6 +148,10 @@ class IdleMonitor:
     @property
     def busy_reason(self) -> str | None:
         return self._busy_reason
+
+    @property
+    def last_effective_idle_ms(self) -> int:
+        return self._last_effective_idle_ms
 
     def mark_prompting(self, value: bool) -> None:
         self._prompting = value
@@ -171,15 +179,23 @@ class IdleMonitor:
         if self._busy:
             # Media/calls/fullscreen activity means the user is occupied even
             # if keyboard/mouse idle time is high. Do not count toward prompt.
+            self._last_busy_at = self._clock()
+            self._last_effective_idle_ms = 0
             if self._prompting:
                 self._prompting = False
                 self._on_activity()
             return
 
-        if idle_ms >= threshold_ms and not self._prompting:
+        effective_idle_ms = idle_ms
+        if self._last_busy_at is not None:
+            since_busy_ms = int(max(0.0, self._clock() - self._last_busy_at) * 1000)
+            effective_idle_ms = min(idle_ms, since_busy_ms)
+        self._last_effective_idle_ms = effective_idle_ms
+
+        if effective_idle_ms >= threshold_ms and not self._prompting:
             self._prompting = True
             self._on_threshold()
-        elif idle_ms < threshold_ms and self._prompting:
+        elif effective_idle_ms < threshold_ms and self._prompting:
             self._prompting = False
             self._on_activity()
 
