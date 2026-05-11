@@ -297,16 +297,14 @@ class _MainWindow:  # pragma: no cover - GUI
 
     def _refresh_monitor_btn(self) -> None:
         if self.monitor_running():
-            self.monitor_btn.configure(
-                text="■  Stop monitor",
-                bg=COLORS["err"], activebackground="#ff6b62",
-            )
+            _set_button_colors(self.monitor_btn,
+                               text="■  Stop monitor",
+                               bg=COLORS["err"], hover_bg="#ff6b62")
             self.monitor_state_var.set("Running")
         else:
-            self.monitor_btn.configure(
-                text="▶  Start monitor",
-                bg=COLORS["accent"], activebackground=COLORS["accent_hi"],
-            )
+            _set_button_colors(self.monitor_btn,
+                               text="▶  Start monitor",
+                               bg=COLORS["accent"], hover_bg=COLORS["accent_hi"])
             self.monitor_state_var.set("Stopped")
 
     def _ensure_idle_source(self):
