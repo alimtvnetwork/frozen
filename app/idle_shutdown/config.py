@@ -138,6 +138,7 @@ SETTING_DEFS: tuple[SettingDef, ...] = (
     SettingDef("GuardMicEnabled", "true", _validate_bool, lambda v: v == "true"),
     SettingDef("GuardAudioEnabled", "true", _validate_bool, lambda v: v == "true"),
     SettingDef("GuardFullscreenEnabled", "true", _validate_bool, lambda v: v == "true"),
+    SettingDef("GuardCameraEnabled", "true", _validate_bool, lambda v: v == "true"),
     SettingDef("CaptureChromiumVariants", "false", _validate_bool,
                lambda v: v == "true"),
     SettingDef("SnapshotKeepCount", "50",

@@ -276,6 +276,7 @@ def cmd_run(silent: bool, dry_run_flag: Optional[bool]) -> None:  # noqa: ARG001
             mic_enabled=str(_settings_provider("GuardMicEnabled")).lower() == "true",
             audio_enabled=str(_settings_provider("GuardAudioEnabled")).lower() == "true",
             fullscreen_enabled=str(_settings_provider("GuardFullscreenEnabled")).lower() == "true",
+            camera_enabled=str(_settings_provider("GuardCameraEnabled")).lower() == "true",
         )
     guard = ActivityGuard(_guard_cfg)
     monitor = IdleMonitor(
