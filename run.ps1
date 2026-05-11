@@ -5,15 +5,22 @@
 #   .\run.ps1 run                     # real idle monitor
 #   .\run.ps1 <any subcmd ...>        # any other CLI subcommand, args pass through
 #   .\run.ps1 -Setup                  # force re-run of setup + tests
+#   .\run.ps1 -i                      # install/refresh deps only (no tests, no run)
+#   .\run.ps1 -d                      # deploy: install if needed, then launch the GUI
 # The venv is created/reused automatically; you never need to activate it.
 
 param(
     [switch]$Setup,
+    [Alias("i")][switch]$Install,
+    [Alias("d")][switch]$Deploy,
     [Parameter(ValueFromRemainingArguments=$true)]
     [string[]]$CliArgs
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($Install) { $Setup = $true }
+if ($Deploy)  { $CliArgs = @("gui") }
 
 function Write-Step($msg)  { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg)    { Write-Host "  ✓ $msg" -ForegroundColor Green }
