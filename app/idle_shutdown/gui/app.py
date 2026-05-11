@@ -41,6 +41,49 @@ SECTIONS = [
 ]
 
 
+# ---------- cross-platform colored "button" --------------------------------
+#
+# tk.Button on macOS ignores ``bg`` / ``fg`` (Aqua paints a native white
+# button), which leaves our white text unreadable. A tk.Label with click
+# bindings honors colors on every platform, so we use it for every colored
+# action button in the app.
+
+
+def _make_button(parent, *, text: str, bg: str, fg: str, hover_bg: str,
+                 command, font=("Helvetica", 11, "bold"),
+                 padx: int = 16, pady: int = 10):
+    import tkinter as tk
+
+    lbl = tk.Label(
+        parent, text=text, bg=bg, fg=fg, font=font,
+        padx=padx, pady=pady, cursor="hand2", anchor="center",
+    )
+    lbl._bg = bg            # type: ignore[attr-defined]
+    lbl._hover_bg = hover_bg  # type: ignore[attr-defined]
+
+    def _enter(_e):
+        lbl.configure(bg=lbl._hover_bg)  # type: ignore[attr-defined]
+
+    def _leave(_e):
+        lbl.configure(bg=lbl._bg)  # type: ignore[attr-defined]
+
+    def _click(_e):
+        if command:
+            command()
+
+    lbl.bind("<Enter>", _enter)
+    lbl.bind("<Leave>", _leave)
+    lbl.bind("<Button-1>", _click)
+    return lbl
+
+
+def _set_button_colors(btn, *, text: str, bg: str, hover_bg: str,
+                       fg: str = "#ffffff") -> None:
+    btn.configure(text=text, bg=bg, fg=fg)
+    btn._bg = bg          # type: ignore[attr-defined]
+    btn._hover_bg = hover_bg  # type: ignore[attr-defined]
+
+
 # ---------- helpers ---------------------------------------------------------
 
 
@@ -86,12 +129,8 @@ def launch_gui() -> None:  # pragma: no cover - GUI entrypoint
 
     app = _MainWindow(root, tk, ttk)
     app.show("dashboard")
-    # If the service is enabled, the desktop app should begin watching idle
-    # time immediately. Users should not need to press Start before the first
-    # configured prompt can appear.
-    app.start_monitor_if_enabled()
-    # Always-on UI heartbeat: keeps the "time remaining" countdown live
-    # whether or not the monitor is running.
+    # Do NOT auto-start the monitor — the countdown should only begin once
+    # the user explicitly presses "Start monitor" on the sidebar.
     app.start_ui_heartbeat()
     root.mainloop()
 
@@ -194,13 +233,11 @@ class _MainWindow:  # pragma: no cover - GUI
             btn.bind("<Leave>", lambda _e, b=btn: self._hover(b, False))
             self._nav_buttons[key] = btn
 
-        # Footer: monitor toggle
-        self.monitor_btn = tk.Button(
+        # Footer: monitor toggle (colored Label; tk.Button ignores bg on macOS)
+        self.monitor_btn = _make_button(
             self.sidebar, text="▶  Start monitor",
+            bg=COLORS["accent"], hover_bg=COLORS["accent_hi"], fg="#ffffff",
             command=self._toggle_monitor,
-            bg=COLORS["accent"], fg="#ffffff", activebackground=COLORS["accent_hi"],
-            activeforeground="#ffffff", relief="flat", bd=0, padx=12, pady=10,
-            font=("Helvetica", 11, "bold"), cursor="hand2",
         )
         self.monitor_btn.pack(side="bottom", fill="x", padx=12, pady=14)
 
@@ -256,16 +293,14 @@ class _MainWindow:  # pragma: no cover - GUI
 
     def _refresh_monitor_btn(self) -> None:
         if self.monitor_running():
-            self.monitor_btn.configure(
-                text="■  Stop monitor",
-                bg=COLORS["err"], activebackground="#ff6b62",
-            )
+            _set_button_colors(self.monitor_btn,
+                               text="■  Stop monitor",
+                               bg=COLORS["err"], hover_bg="#ff6b62")
             self.monitor_state_var.set("Running")
         else:
-            self.monitor_btn.configure(
-                text="▶  Start monitor",
-                bg=COLORS["accent"], activebackground=COLORS["accent_hi"],
-            )
+            _set_button_colors(self.monitor_btn,
+                               text="▶  Start monitor",
+                               bg=COLORS["accent"], hover_bg=COLORS["accent_hi"])
             self.monitor_state_var.set("Stopped")
 
     def _ensure_idle_source(self):
@@ -297,16 +332,22 @@ class _MainWindow:  # pragma: no cover - GUI
         self._heartbeat_tick()
 
     def _heartbeat_tick(self) -> None:
-        idle_ms = self._read_idle_ms()
-        threshold = self._threshold_ms()
-        remaining = max(0, threshold - idle_ms)
-        self.idle_var.set(self._fmt_ms(idle_ms))
-        self.remaining_var.set(self._fmt_ms(remaining))
+        # Only watch input / count down when the monitor is actually
+        # running. Before "Start monitor" is pressed, the dashboard should
+        # show neutral placeholders rather than a live ticking countdown.
         if self._monitor_running and self._monitor is not None:
+            idle_ms = self._read_idle_ms()
+            threshold = self._threshold_ms()
+            remaining = max(0, threshold - idle_ms)
+            self.idle_var.set(self._fmt_ms(idle_ms))
+            self.remaining_var.set(self._fmt_ms(remaining))
             try:
                 self._monitor.tick()
             except Exception:  # noqa: BLE001
                 logger.exception("monitor tick failed")
+        else:
+            self.idle_var.set("—")
+            self.remaining_var.set("Not running")
         self._heartbeat_job = self.root.after(1000, self._heartbeat_tick)
 
     def _start_monitor(self) -> None:
@@ -415,14 +456,18 @@ class _MainWindow:  # pragma: no cover - GUI
 
         btns = tk.Frame(win, bg=COLORS["panel"])
         btns.pack()
-        tk.Button(btns, text="Yes, I'm here", width=14,
-                  bg=COLORS["accent"], fg="#ffffff", relief="flat", bd=0,
-                  activebackground=COLORS["accent_hi"], cursor="hand2",
-                  command=lambda: finish(PopupResult.Yes)).pack(side="left", padx=8)
-        tk.Button(btns, text="No, shut down", width=14,
-                  bg=COLORS["err"], fg="#ffffff", relief="flat", bd=0,
-                  activebackground="#ff6b62", cursor="hand2",
-                  command=lambda: finish(PopupResult.No)).pack(side="left", padx=8)
+        # Use Label-based buttons so the colored bg is visible on macOS
+        # (native tk.Button ignores bg/fg under Aqua and stays white).
+        _make_button(btns, text="Yes, I'm here",
+                     bg=COLORS["accent"], hover_bg=COLORS["accent_hi"],
+                     fg="#ffffff",
+                     command=lambda: finish(PopupResult.Yes),
+                     padx=24, pady=10).pack(side="left", padx=8, pady=8)
+        _make_button(btns, text="No, shut down",
+                     bg=COLORS["err"], hover_bg="#ff6b62",
+                     fg="#ffffff",
+                     command=lambda: finish(PopupResult.No),
+                     padx=24, pady=10).pack(side="left", padx=8, pady=8)
 
         def tick() -> None:
             if state["done"]:
