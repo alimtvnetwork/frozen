@@ -441,6 +441,16 @@ class _MainWindow:  # pragma: no cover - GUI
     # ---------- in-window popup (main-thread safe) ----------
 
     def _close_popup(self) -> None:
+        state = self._popup_state
+        if state is not None:
+            state["done"] = True
+            after = state.get("after")
+            if after and self._popup_win is not None:
+                try:
+                    self._popup_win.after_cancel(after)
+                except Exception:  # noqa: BLE001
+                    pass
+            self._popup_state = None
         if self._popup_win is not None:
             try:
                 self._popup_win.destroy()
@@ -471,6 +481,7 @@ class _MainWindow:  # pragma: no cover - GUI
 
         state = {"remaining_ms": int(countdown_seconds) * 1000,
                  "done": False, "after": None}
+        self._popup_state = state
 
         tk.Label(win, text="Are you still at your desk?",
                  bg=COLORS["panel"], fg=COLORS["fg"],
@@ -483,6 +494,7 @@ class _MainWindow:  # pragma: no cover - GUI
             if state["done"]:
                 return
             state["done"] = True
+            self._popup_state = None
             if state["after"]:
                 try:
                     win.after_cancel(state["after"])
