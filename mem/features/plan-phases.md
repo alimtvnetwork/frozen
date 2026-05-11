@@ -18,3 +18,4 @@ Follow-ups:
 - Tray/menu-bar icon — TODO.
 - Restore CLI exists (`idle-shutdown restore`); now also launches Chromium variants (Edge/Brave/Chromium/Beta/Canary) via `detect_variant_executable()` with per-OS exe candidates. Each variant launched with `--restore-last-session` + its tab URLs. RestoreResult.variants_launched lists which ones started.
 - Snapshot diff — DONE. `idle-shutdown diff <id1> <id2> [--json]`. App identity = (normpath(exe), normpath(doc)); tab identity = (browser_name, profile_dir, url). Indices/titles ignored to avoid noise. Pure helper in `idle_shutdown/diff.py`.
+- Snapshot export — DONE. `idle-shutdown export [--snapshot-id N] [--format json|html] [-o PATH] [--stdout]`. Default path: `<snapshots_dir>/snapshot-<id>.<ext>`. JSON via `dataclasses.asdict`; HTML self-contained (inline CSS, html-escaped). Pure helpers in `idle_shutdown/export.py`. Defaults to latest snapshot when `--snapshot-id` omitted.
