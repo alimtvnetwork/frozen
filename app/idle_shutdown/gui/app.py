@@ -368,8 +368,9 @@ class _MainWindow:  # pragma: no cover - GUI
                 self.remaining_var.set("Paused")
                 self.busy_reason_var.set(self._busy_label(busy_reason))
             else:
-                remaining = max(0, threshold - idle_ms)
-                self.idle_var.set(self._fmt_ms(idle_ms))
+                effective_idle_ms = int(getattr(self._monitor, "last_effective_idle_ms", idle_ms))
+                remaining = max(0, threshold - effective_idle_ms)
+                self.idle_var.set(self._fmt_ms(effective_idle_ms))
                 self.remaining_var.set(self._fmt_ms(remaining))
                 self.busy_reason_var.set("—")
         else:
