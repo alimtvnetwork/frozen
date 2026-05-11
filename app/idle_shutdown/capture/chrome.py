@@ -45,6 +45,7 @@ class ChromeProfileInfo:
     profile_dir: str            # raw directory name (e.g. "Default", "Profile 1")
     profile_name: str           # human label from Local State; falls back to profile_dir
     windows: tuple[ChromeWindowInfo, ...] = field(default_factory=tuple)
+    browser_name: str = "Chrome"
 
 
 @dataclass(frozen=True)
@@ -126,44 +127,74 @@ def capture_chrome_session(
     snss_reader: Callable[[Path], list[ChromeWindowInfo]] | None = None,
     read_text: Callable[[str], str | None] | None = None,
     list_dir: Callable[[str], list[str]] | None = None,
+    include_variants: bool = False,
 ) -> ChromeSession:
     e = env if env is not None else dict(os.environ)
     exe = detect_chrome_path(reg_read=reg_read, env=e, exists=exists)
     if not exe:
         logger.warning("event=chrome_not_detected reason=missing_exe")
-        return ChromeSession(executable_path=None, profiles=())
+        # Variants may still exist (e.g. Edge-only Windows machine).
+        primary: list[ChromeProfileInfo] = []
+    else:
+        user_data_root = _chrome_user_data_root(exe, e)
+        if user_data_root and exists(user_data_root):
+            primary = _capture_profiles_for(
+                user_data_root, "Chrome",
+                exists=exists, snss_reader=snss_reader,
+                read_text=read_text, list_dir=list_dir,
+            )
+        else:
+            logger.warning("event=chrome_not_detected reason=missing_user_data")
+            primary = []
 
-    user_data_root = _chrome_user_data_root(exe, e)
-    if not user_data_root:
-        logger.warning("event=chrome_not_detected reason=missing_user_data")
-        return ChromeSession(executable_path=exe, profiles=())
-    if not exists(user_data_root):
-        logger.warning("event=chrome_not_detected reason=missing_user_data")
-        return ChromeSession(executable_path=exe, profiles=())
+    profiles: list[ChromeProfileInfo] = list(primary)
 
+    if include_variants:
+        for variant in _enumerate_chromium_variants(e):
+            if not exists(variant.user_data_root):
+                continue
+            profiles.extend(_capture_profiles_for(
+                variant.user_data_root, variant.browser_name,
+                exists=exists, snss_reader=snss_reader,
+                read_text=read_text, list_dir=list_dir,
+            ))
+
+    return ChromeSession(executable_path=exe, profiles=tuple(profiles))
+
+
+def _capture_profiles_for(
+    user_data_root: str,
+    browser_name: str,
+    *,
+    exists: Callable[[str], bool],
+    snss_reader: Callable[[Path], list[ChromeWindowInfo]] | None,
+    read_text: Callable[[str], str | None] | None,
+    list_dir: Callable[[str], list[str]] | None,
+) -> list[ChromeProfileInfo]:
     if snss_reader is None:
         from idle_shutdown.capture.snss import default_snss_reader
         snss_reader = default_snss_reader
 
     profile_names = _read_profile_names(user_data_root, read_text=read_text)
     profile_dirs = _list_profile_dirs(user_data_root, exists=exists, list_dir=list_dir)
-    profiles: list[ChromeProfileInfo] = []
+    out: list[ChromeProfileInfo] = []
     for pdir in profile_dirs:
         sessions = os.path.join(user_data_root, pdir, "Sessions")
         try:
             windows = snss_reader(Path(sessions)) if exists(sessions) else []
         except Exception as ex:  # noqa: BLE001
-            logger.warning("event=chrome_snss_failed profile=%s err=%s", pdir, ex)
+            logger.warning("event=chrome_snss_failed browser=%s profile=%s err=%s",
+                           browser_name, pdir, ex)
             windows = []
         if not windows:
-            # Skip profiles that yielded zero tabs to keep snapshots tidy.
             continue
-        profiles.append(ChromeProfileInfo(
+        out.append(ChromeProfileInfo(
             profile_dir=pdir,
             profile_name=profile_names.get(pdir, pdir),
             windows=tuple(windows),
+            browser_name=browser_name,
         ))
-    return ChromeSession(executable_path=exe, profiles=tuple(profiles))
+    return out
 
 
 # ---------- profile discovery ----------------------------------------------
@@ -261,3 +292,54 @@ def _chrome_user_data_root(exe: str, e: dict[str, str]) -> str | None:
     if win_local:
         return _WIN_SEP.join([win_local, "Google", "Chrome", "User Data"])
     return None
+
+
+# ---------- Chromium variants (Edge, Brave, Chrome Beta/Canary, Chromium) ---
+
+
+@dataclass(frozen=True)
+class ChromiumVariant:
+    browser_name: str
+    user_data_root: str
+
+
+def _enumerate_chromium_variants(e: dict[str, str]) -> list[ChromiumVariant]:
+    """Return user-data roots for known Chromium-based browsers.
+
+    Only path candidates that are non-empty strings are returned; existence
+    check is done by the caller so test fakes can decide.
+    """
+    kind = current_os()
+    home = e.get("HOME") or os.path.expanduser("~")
+    win_local = e.get("LOCALAPPDATA")
+
+    def _join_win(*parts: str) -> str:
+        return _WIN_SEP.join(parts)
+
+    out: list[ChromiumVariant] = []
+
+    def _add(name: str, path: str | None) -> None:
+        if path:
+            out.append(ChromiumVariant(browser_name=name, user_data_root=path))
+
+    if kind is OSKind.Windows:
+        if win_local:
+            _add("Edge",         _join_win(win_local, "Microsoft", "Edge", "User Data"))
+            _add("Brave",        _join_win(win_local, "BraveSoftware", "Brave-Browser", "User Data"))
+            _add("Chrome Beta",  _join_win(win_local, "Google", "Chrome Beta", "User Data"))
+            _add("Chrome Canary",_join_win(win_local, "Google", "Chrome SxS", "User Data"))
+            _add("Chromium",     _join_win(win_local, "Chromium", "User Data"))
+    elif kind is OSKind.MacOS:
+        appsup = os.path.join(home, "Library", "Application Support")
+        _add("Edge",         os.path.join(appsup, "Microsoft Edge"))
+        _add("Brave",        os.path.join(appsup, "BraveSoftware", "Brave-Browser"))
+        _add("Chrome Beta",  os.path.join(appsup, "Google", "Chrome Beta"))
+        _add("Chrome Canary",os.path.join(appsup, "Google", "Chrome Canary"))
+        _add("Chromium",     os.path.join(appsup, "Chromium"))
+    elif kind is OSKind.Linux:
+        cfg = os.path.join(home, ".config")
+        _add("Edge",        os.path.join(cfg, "microsoft-edge"))
+        _add("Brave",       os.path.join(cfg, "BraveSoftware", "Brave-Browser"))
+        _add("Chrome Beta", os.path.join(cfg, "google-chrome-beta"))
+        _add("Chromium",    os.path.join(cfg, "chromium"))
+    return out

@@ -186,11 +186,12 @@ class CaptureRepo:
 
     def insert_chrome_profile(
         self, snapshot_id: int, profile_dir: str, profile_name: str,
+        browser_name: str = "Chrome",
     ) -> int:
         cur = self.conn.execute(
-            "INSERT INTO ChromeProfile (SnapshotId, ProfileDir, ProfileName) "
-            "VALUES (?, ?, ?)",
-            (snapshot_id, profile_dir, profile_name),
+            "INSERT INTO ChromeProfile (SnapshotId, ProfileDir, ProfileName, BrowserName) "
+            "VALUES (?, ?, ?, ?)",
+            (snapshot_id, profile_dir, profile_name, browser_name),
         )
         return int(cur.lastrowid)
 
@@ -236,6 +237,7 @@ class TabRow:
     tab_index: int
     url: str
     title: str
+    browser_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -246,7 +248,8 @@ class SnapshotDetail:
     desktop_count: int
     apps: list[AppRow]
     tabs: list[TabRow]
-    profile_summary: list[tuple[str, str, int]]   # (profile_dir, profile_name, tab_count)
+    profile_summary: list[tuple[str, str, int, str]]
+    # (profile_dir, profile_name, tab_count, browser_name)
 
 
 class SnapshotReadRepo:
@@ -303,23 +306,26 @@ class SnapshotReadRepo:
                 tab_index=int(r["TabIndex"]),
                 url=str(r["Url"]),
                 title=str(r["Title"]),
+                browser_name=(r["BrowserName"]),
             )
             for r in self.conn.execute(
-                "SELECT p.ProfileDir, p.ProfileName, w.WindowIndex, "
+                "SELECT p.ProfileDir, p.ProfileName, p.BrowserName, w.WindowIndex, "
                 "       t.TabIndex, t.Url, t.Title "
                 "FROM ChromeTab t "
                 "JOIN ChromeWindow w ON w.ChromeWindowId = t.ChromeWindowId "
                 "LEFT JOIN ChromeProfile p ON p.ChromeProfileId = w.ChromeProfileId "
                 "WHERE w.SnapshotId = ? "
-                "ORDER BY p.ProfileDir, w.WindowIndex, t.TabIndex",
+                "ORDER BY p.BrowserName, p.ProfileDir, w.WindowIndex, t.TabIndex",
                 (snapshot_id,),
             ).fetchall()
         ]
 
         profile_summary = [
-            (str(r["ProfileDir"]), str(r["ProfileName"]), int(r["TabCount"]))
+            (str(r["ProfileDir"]), str(r["ProfileName"]),
+             int(r["TabCount"]), str(r["BrowserName"]))
             for r in self.conn.execute(
-                "SELECT p.ProfileDir, p.ProfileName, COUNT(t.ChromeTabId) AS TabCount "
+                "SELECT p.ProfileDir, p.ProfileName, p.BrowserName, "
+                "       COUNT(t.ChromeTabId) AS TabCount "
                 "FROM ChromeProfile p "
                 "LEFT JOIN ChromeWindow w ON w.ChromeProfileId = p.ChromeProfileId "
                 "LEFT JOIN ChromeTab t ON t.ChromeWindowId = w.ChromeWindowId "
