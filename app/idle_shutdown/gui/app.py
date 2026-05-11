@@ -237,13 +237,11 @@ class _MainWindow:  # pragma: no cover - GUI
             btn.bind("<Leave>", lambda _e, b=btn: self._hover(b, False))
             self._nav_buttons[key] = btn
 
-        # Footer: monitor toggle
-        self.monitor_btn = tk.Button(
+        # Footer: monitor toggle (colored Label; tk.Button ignores bg on macOS)
+        self.monitor_btn = _make_button(
             self.sidebar, text="▶  Start monitor",
+            bg=COLORS["accent"], hover_bg=COLORS["accent_hi"], fg="#ffffff",
             command=self._toggle_monitor,
-            bg=COLORS["accent"], fg="#ffffff", activebackground=COLORS["accent_hi"],
-            activeforeground="#ffffff", relief="flat", bd=0, padx=12, pady=10,
-            font=("Helvetica", 11, "bold"), cursor="hand2",
         )
         self.monitor_btn.pack(side="bottom", fill="x", padx=12, pady=14)
 
