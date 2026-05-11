@@ -165,26 +165,28 @@ def _mac_coreaudio_output_active() -> bool | None:  # pragma: no cover - platfor
 
     saw_readable_output = False
     for device_id in devices:
-        running_addr = AudioObjectPropertyAddress(
-            prop_running, scope_output, element_main.value
-        )
-        running = ctypes.c_uint32(0)
-        running_size = ctypes.c_uint32(ctypes.sizeof(running))
-        try:
-            status = ca.AudioObjectGetPropertyData(
-                ctypes.c_uint32(int(device_id)),
-                ctypes.byref(running_addr),
-                ctypes.c_uint32(0),
-                None,
-                ctypes.byref(running_size),
-                ctypes.byref(running),
+        for scope in (scope_output, scope_global):
+            running_addr = AudioObjectPropertyAddress(
+                prop_running, scope, element_main.value
             )
-        except Exception:
-            continue
-        if status == no_error:
-            saw_readable_output = True
-            if running.value:
-                return True
+            running = ctypes.c_uint32(0)
+            running_size = ctypes.c_uint32(ctypes.sizeof(running))
+            try:
+                status = ca.AudioObjectGetPropertyData(
+                    ctypes.c_uint32(int(device_id)),
+                    ctypes.byref(running_addr),
+                    ctypes.c_uint32(0),
+                    None,
+                    ctypes.byref(running_size),
+                    ctypes.byref(running),
+                )
+            except Exception:
+                continue
+            if status == no_error:
+                saw_readable_output = True
+                if running.value:
+                    return True
+                break
     return False if saw_readable_output else None
 
 
