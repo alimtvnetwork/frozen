@@ -57,6 +57,72 @@ class SettingsRepo:
 # ----- Snapshot --------------------------------------------------------------
 
 
+# ----- Restore exclusions ---------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RestoreExclusionRow:
+    id: int
+    executable_path: str
+    reason: str
+    created_at: str
+
+
+def _norm_exe(p: str) -> str:
+    return (p or "").strip().lower().replace("\\", "/")
+
+
+class RestoreExclusionRepo:
+    """Apps that must NEVER be relaunched by ``restore``.
+
+    Matched by normalized executable path (lowercased, forward slashes).
+    Inserted via the GUI/CLI, e.g. for password managers or banking apps.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def add(self, executable_path: str, reason: str = "") -> int:
+        norm = _norm_exe(executable_path)
+        if not norm:
+            raise ValueError("executable_path must not be empty")
+        cur = self.conn.execute(
+            "INSERT INTO RestoreExclusion (ExecutablePath, Reason, CreatedAt) "
+            "VALUES (?, ?, ?) "
+            "ON CONFLICT(ExecutablePath) DO UPDATE SET Reason = excluded.Reason",
+            (norm, reason or "", utc_now_iso()),
+        )
+        return int(cur.lastrowid or 0)
+
+    def remove(self, executable_path: str) -> int:
+        norm = _norm_exe(executable_path)
+        cur = self.conn.execute(
+            "DELETE FROM RestoreExclusion WHERE ExecutablePath = ?", (norm,)
+        )
+        return int(cur.rowcount or 0)
+
+    def list(self) -> list[RestoreExclusionRow]:
+        rows = self.conn.execute(
+            "SELECT RestoreExclusionId, ExecutablePath, Reason, CreatedAt "
+            "FROM RestoreExclusion ORDER BY ExecutablePath"
+        ).fetchall()
+        return [
+            RestoreExclusionRow(
+                int(r["RestoreExclusionId"]),
+                str(r["ExecutablePath"]),
+                str(r["Reason"]),
+                str(r["CreatedAt"]),
+            )
+            for r in rows
+        ]
+
+    def excluded_paths(self) -> set[str]:
+        return {row.executable_path for row in self.list()}
+
+    def is_excluded(self, executable_path: str) -> bool:
+        return _norm_exe(executable_path) in self.excluded_paths()
+
+
 class SnapshotRepo:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
