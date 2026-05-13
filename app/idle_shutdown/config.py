@@ -128,8 +128,11 @@ class SettingDef:
 
 
 SETTING_DEFS: tuple[SettingDef, ...] = (
-    SettingDef("IdleThresholdMinutes", "10", _validate_int_range(1, 240), int),
-    SettingDef("PopupCountdownSeconds", "10", _validate_int_range(5, 120), int),
+    # Production defaults (Phase 5 go-live):
+    #   - 15 min idle before prompt
+    #   - 60 s countdown on popup before auto-shutdown
+    SettingDef("IdleThresholdMinutes", "15", _validate_int_range(1, 240), int),
+    SettingDef("PopupCountdownSeconds", "60", _validate_int_range(5, 300), int),
     SettingDef("ServiceState", "Enabled",
                _validate_enum(("Enabled", "Disabled")), str),
     SettingDef("AutoRestoreOnBoot", "true", _validate_bool,
