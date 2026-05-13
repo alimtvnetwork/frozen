@@ -835,6 +835,20 @@ def cmd_doctor() -> None:
         raise click.exceptions.Exit(1)
 
 
+@cli.command("reset-failures")
+def cmd_reset_failures() -> None:
+    """Clear the consecutive-snapshot-failure streak (and the notify latch).
+
+    Run this after fixing whatever was breaking background snapshots so the
+    next failure can re-trigger the toast notification.
+    """
+    with connect() as conn:
+        repo = SettingsRepo(conn)
+        prev = int(repo.get("ConsecutiveSnapshotFailures") or 0)
+        repo.set("ConsecutiveSnapshotFailures", "0")
+    click.echo(f"reset · cleared {prev} consecutive failures")
+
+
 @cli.command("tray")
 def cmd_tray() -> None:
     """Run the system-tray status icon (requires the optional 'tray' extras).
