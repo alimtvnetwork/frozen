@@ -10,7 +10,7 @@ from idle_shutdown.errors import ConfigError
 def test_get_returns_typed_value(temp_db):
     init_db()
     with connect() as conn:
-        assert SettingsRepo(conn).get("IdleThresholdMinutes") == 10
+        assert SettingsRepo(conn).get("IdleThresholdMinutes") == 15
         assert SettingsRepo(conn).get("AutoRestoreOnBoot") is True
 
 
@@ -20,7 +20,7 @@ def test_set_rejects_out_of_range(temp_db):
         with pytest.raises(ConfigError):
             SettingsRepo(conn).set("IdleThresholdMinutes", 0)
         with pytest.raises(ConfigError):
-            SettingsRepo(conn).set("PopupCountdownSeconds", 200)
+            SettingsRepo(conn).set("PopupCountdownSeconds", 9999)
 
 
 def test_set_rejects_unknown_key(temp_db):

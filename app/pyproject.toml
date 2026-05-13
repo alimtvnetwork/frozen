@@ -25,6 +25,9 @@ tray = [
   "pystray>=0.19",
   "Pillow>=10.0",
 ]
+notify = [
+  "plyer>=2.1",
+]
 
 [project.scripts]
 idle-shutdown = "idle_shutdown.cli:main"
