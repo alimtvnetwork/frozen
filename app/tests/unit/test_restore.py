@@ -130,6 +130,33 @@ def test_writes_last_restored_markers(temp_db):
         assert repo.get("LastRestoredAt") != ""
 
 
+def test_dry_run_records_plan_without_side_effects(temp_db):
+    init_db()
+    _seed_snapshot()
+    spawned: list[list[str]] = []
+    desktops_calls: list[int] = []
+    switch_calls: list[int] = []
+    result = restore(
+        live_processes=lambda: [],
+        spawn=lambda argv, cwd: spawned.append(argv),
+        ensure_desktops=lambda n: desktops_calls.append(n),
+        switch_to_desktop=lambda i: switch_calls.append(i),
+        dry_run=True,
+    )
+    # Plan was captured (apps + chrome).
+    assert result.apps_launched == 2
+    assert result.chrome_launched is True
+    assert any("--restore-last-session" in c for c in spawned)
+    # No real-world side effects ran.
+    assert desktops_calls == []
+    assert switch_calls == []
+    # No persisted markers.
+    with connect() as conn:
+        repo = SettingsRepo(conn)
+        assert repo.get("LastRestoredSnapshotId") == 0
+        assert repo.get("LastRestoredAt") == ""
+
+
 def test_restore_missing_snapshot_raises(temp_db):
     init_db()
     with pytest.raises(RestoreError):

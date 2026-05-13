@@ -267,6 +267,7 @@ def restore(
     switch_to_desktop: Callable[[int], None] = _switch_to_desktop_default,
     move_to_desktop: Callable[[int, int], None] = _move_to_desktop_default,
     now_iso: Callable[[], str] = utc_now_iso,
+    dry_run: bool = False,
 ) -> RestoreResult:
     data = _read_snapshot(snapshot_id)
     live_fn = live_processes or _default_live_processes
@@ -279,7 +280,8 @@ def restore(
 
     logger.info("event=restore_started snapshot_id=%d apps=%d chrome_tabs=%d",
                 data.snapshot_id, len(data.apps), len(data.chrome_tabs))
-    ensure_desktops(data.desktop_count)
+    if not dry_run:
+        ensure_desktops(data.desktop_count)
 
     live = list(live_fn())
     launched = skipped = 0
@@ -289,7 +291,7 @@ def restore(
     apps_sorted = sorted(enumerate(data.apps), key=lambda t: (t[1].desktop_index, t[0]))
     for desk_idx, group in groupby(apps_sorted, key=lambda t: t[1].desktop_index):
         group_apps = [a for _, a in group]
-        if data.desktop_count > 1:
+        if data.desktop_count > 1 and not dry_run:
             switch_to_desktop(desk_idx)
         for app in group_apps:
             if _is_duplicate(app, live):
@@ -354,10 +356,11 @@ def restore(
             logger.warning("event=restore_item browser=%s status=failed err=%s",
                            v.browser_name, e)
 
-    with connect() as conn:
-        repo = SettingsRepo(conn)
-        repo.set("LastRestoredSnapshotId", data.snapshot_id)
-        repo.set("LastRestoredAt", now_iso())
+    if not dry_run:
+        with connect() as conn:
+            repo = SettingsRepo(conn)
+            repo.set("LastRestoredSnapshotId", data.snapshot_id)
+            repo.set("LastRestoredAt", now_iso())
 
     logger.info("event=restore_completed snapshot_id=%d launched=%d skipped=%d",
                 data.snapshot_id, launched, skipped)

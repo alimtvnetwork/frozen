@@ -393,10 +393,39 @@ def cmd_simulate(countdown: int, no_popup: bool, force: bool) -> None:
 
 @cli.command("restore")
 @click.option("--snapshot-id", type=int, default=None)
-def cmd_restore(snapshot_id: Optional[int]) -> None:
-    """Restore the latest (or given) snapshot."""
+@click.option("--dry-run", is_flag=True,
+              help="Preview what would launch (no apps started, no Chrome).")
+def cmd_restore(snapshot_id: Optional[int], dry_run: bool) -> None:
+    """Restore the latest (or given) snapshot.
+
+    With ``--dry-run``: prints the full launch plan (apps + Chrome tabs per
+    profile) and exits without spawning anything. Recommended before the
+    Phase 5 real-shutdown smoke test.
+    """
     from idle_shutdown.restore import restore
     from idle_shutdown.single_instance import acquire_single_instance
+
+    if dry_run:
+        planned: list[list[str]] = []
+
+        def _fake_spawn(argv: list[str], cwd: Optional[str]) -> Optional[int]:
+            planned.append(argv + ([f"  (cwd={cwd})"] if cwd else []))
+            return None  # no real PID — also disables move_to_desktop calls
+
+        result = restore(snapshot_id, spawn=_fake_spawn, dry_run=True)
+        click.echo(
+            f"DRY RUN — snapshot {result.snapshot_id}\n"
+            f"  would launch: {result.apps_launched} app(s)\n"
+            f"  would skip:   {result.apps_skipped} (already running)\n"
+            f"  Chrome:       {'would launch' if result.chrome_launched else 'no'}"
+            + (f"\n  variants:     {', '.join(result.variants_launched)}"
+               if result.variants_launched else "")
+        )
+        if planned:
+            click.echo("\nPlanned commands:")
+            for argv in planned:
+                click.echo("  $ " + " ".join(argv))
+        return
 
     with acquire_single_instance():
         result = restore(snapshot_id)
