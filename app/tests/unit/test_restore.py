@@ -163,6 +163,42 @@ def test_restore_missing_snapshot_raises(temp_db):
         restore(snapshot_id=999, live_processes=lambda: [], spawn=lambda *_: None)
 
 
+def test_apps_only_skips_chrome(temp_db):
+    init_db()
+    _seed_snapshot()
+    spawned: list[list[str]] = []
+    result = restore(
+        live_processes=lambda: [],
+        spawn=lambda argv, cwd: spawned.append(argv),
+        apps_only=True,
+    )
+    assert result.apps_launched == 2
+    assert result.chrome_launched is False
+    assert all("chrome.exe" not in c[0].lower() for c in spawned)
+
+
+def test_chrome_only_skips_apps(temp_db):
+    init_db()
+    _seed_snapshot()
+    spawned: list[list[str]] = []
+    result = restore(
+        live_processes=lambda: [],
+        spawn=lambda argv, cwd: spawned.append(argv),
+        chrome_only=True,
+    )
+    assert result.apps_launched == 0
+    assert result.chrome_launched is True
+    assert any("--restore-last-session" in c for c in spawned)
+
+
+def test_apps_only_and_chrome_only_mutually_exclusive(temp_db):
+    init_db()
+    _seed_snapshot()
+    with pytest.raises(RestoreError):
+        restore(live_processes=lambda: [], spawn=lambda *_: None,
+                apps_only=True, chrome_only=True)
+
+
 def test_per_item_failure_continues(temp_db):
     init_db()
     _seed_snapshot()
