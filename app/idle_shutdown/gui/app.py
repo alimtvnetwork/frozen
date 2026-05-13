@@ -181,6 +181,32 @@ def _apply_ttk_theme(ttk) -> None:
     style.configure("TCombobox", fieldbackground=COLORS["input_bg"],
                     background=COLORS["input_bg"], foreground=COLORS["fg"],
                     arrowcolor=COLORS["fg"])
+    style.map("TCombobox",
+              fieldbackground=[("readonly", COLORS["input_bg"])],
+              foreground=[("readonly", COLORS["fg"])],
+              background=[("readonly", COLORS["input_bg"])],
+              selectbackground=[("readonly", COLORS["input_bg"])],
+              selectforeground=[("readonly", COLORS["fg"])])
+    style.configure("TSpinbox", fieldbackground=COLORS["input_bg"],
+                    background=COLORS["input_bg"], foreground=COLORS["fg"],
+                    insertcolor=COLORS["fg"], arrowcolor=COLORS["fg"],
+                    bordercolor=COLORS["border"], lightcolor=COLORS["border"],
+                    darkcolor=COLORS["border"])
+    style.map("TSpinbox",
+              fieldbackground=[("readonly", COLORS["input_bg"]),
+                               ("!disabled", COLORS["input_bg"])],
+              foreground=[("!disabled", COLORS["fg"])])
+    # Card-styled labels for the settings panel
+    style.configure("Card.TFrame", background=COLORS["sidebar"])
+    style.configure("CardTitle.TLabel", background=COLORS["sidebar"],
+                    foreground=COLORS["fg"], font=("Helvetica", 13, "bold"))
+    style.configure("CardMuted.TLabel", background=COLORS["sidebar"],
+                    foreground=COLORS["fg_muted"], font=("Helvetica", 11))
+    style.configure("Card.TCheckbutton", background=COLORS["sidebar"],
+                    foreground=COLORS["fg"], focuscolor=COLORS["accent"])
+    style.map("Card.TCheckbutton",
+              background=[("active", COLORS["sidebar"])],
+              foreground=[("active", COLORS["fg"])])
     style.configure("Treeview", background=COLORS["input_bg"],
                     fieldbackground=COLORS["input_bg"],
                     foreground=COLORS["fg"], borderwidth=0, rowheight=26)
@@ -702,18 +728,28 @@ class SettingsPanel(_PanelBase):  # pragma: no cover - GUI
         s = _all_settings()
         vars: dict[str, object] = {}
 
-        def row(label: str, helptext: str, widget_factory) -> None:
-            f = ttk.Frame(wrap, style="Panel.TFrame")
-            f.pack(fill="x", pady=8, **pad)
-            ttk.Label(f, text=label, style="H2.TLabel").pack(anchor="w")
-            ttk.Label(f, text=helptext, style="Muted.TLabel").pack(anchor="w",
-                                                                    pady=(0, 6))
-            widget_factory(f).pack(anchor="w")
+        def card(label: str, helptext: str, widget_factory) -> None:
+            outer = self.tk.Frame(wrap, bg=COLORS["panel"])
+            outer.pack(fill="x", pady=6, **pad)
+            inner = self.tk.Frame(
+                outer, bg=COLORS["sidebar"], padx=20, pady=16,
+                highlightthickness=1, highlightbackground=COLORS["border"],
+            )
+            inner.pack(fill="x")
+            self.tk.Label(inner, text=label, bg=COLORS["sidebar"],
+                          fg=COLORS["fg"], font=("Helvetica", 13, "bold"),
+                          anchor="w", justify="left").pack(anchor="w")
+            if helptext:
+                self.tk.Label(inner, text=helptext, bg=COLORS["sidebar"],
+                              fg=COLORS["fg_muted"], font=("Helvetica", 11),
+                              anchor="w", justify="left",
+                              wraplength=720).pack(anchor="w", pady=(2, 10))
+            widget_factory(inner).pack(anchor="w", pady=(2, 0))
 
         # Idle threshold
         v_idle = self.tk.StringVar(value=s.get("IdleThresholdMinutes", "10"))
         vars["IdleThresholdMinutes"] = v_idle
-        row("Prompt after idle minutes",
+        card("Prompt after idle minutes",
             "How long the computer must be untouched before Frozen asks "
             "“are you still there?” (1–240).",
             lambda f: ttk.Spinbox(f, from_=1, to=240, width=8, textvariable=v_idle))
@@ -721,7 +757,7 @@ class SettingsPanel(_PanelBase):  # pragma: no cover - GUI
         # Countdown
         v_cd = self.tk.StringVar(value=s.get("PopupCountdownSeconds", "10"))
         vars["PopupCountdownSeconds"] = v_cd
-        row("Popup countdown (seconds)",
+        card("Popup countdown (seconds)",
             "How long the popup waits for an answer before snapshotting "
             "and shutting down (5–120).",
             lambda f: ttk.Spinbox(f, from_=5, to=120, width=8, textvariable=v_cd))
@@ -729,7 +765,7 @@ class SettingsPanel(_PanelBase):  # pragma: no cover - GUI
         # Service state
         v_svc = self.tk.StringVar(value=s.get("ServiceState", "Enabled"))
         vars["ServiceState"] = v_svc
-        row("Service state",
+        card("Service state",
             "Disable to keep Frozen installed but never auto-shut down.",
             lambda f: ttk.Combobox(f, values=["Enabled", "Disabled"],
                                    textvariable=v_svc, width=14, state="readonly"))
@@ -737,10 +773,46 @@ class SettingsPanel(_PanelBase):  # pragma: no cover - GUI
         def bool_row(key: str, label: str, helptext: str) -> None:
             v = self.tk.BooleanVar(value=str(s.get(key, "false")).lower() == "true")
             vars[key] = v
-            f = ttk.Frame(wrap, style="Panel.TFrame")
-            f.pack(fill="x", pady=8, **pad)
-            ttk.Checkbutton(f, text=label, variable=v).pack(anchor="w")
-            ttk.Label(f, text=helptext, style="Muted.TLabel").pack(anchor="w")
+            outer = self.tk.Frame(wrap, bg=COLORS["panel"])
+            outer.pack(fill="x", pady=6, **pad)
+            inner = self.tk.Frame(
+                outer, bg=COLORS["sidebar"], padx=20, pady=14,
+                highlightthickness=1, highlightbackground=COLORS["border"],
+            )
+            inner.pack(fill="x")
+            row = self.tk.Frame(inner, bg=COLORS["sidebar"])
+            row.pack(fill="x")
+            text_col = self.tk.Frame(row, bg=COLORS["sidebar"])
+            text_col.pack(side="left", fill="x", expand=True)
+            self.tk.Label(text_col, text=label, bg=COLORS["sidebar"],
+                          fg=COLORS["fg"], font=("Helvetica", 12, "bold"),
+                          anchor="w", justify="left",
+                          wraplength=620).pack(anchor="w")
+            if helptext:
+                self.tk.Label(text_col, text=helptext, bg=COLORS["sidebar"],
+                              fg=COLORS["fg_muted"], font=("Helvetica", 10),
+                              anchor="w", justify="left",
+                              wraplength=620).pack(anchor="w", pady=(2, 0))
+            toggle = self.tk.Label(
+                row, bg=COLORS["sidebar"], cursor="hand2",
+                font=("Helvetica", 14, "bold"), padx=14, pady=4,
+            )
+            toggle.pack(side="right", padx=(12, 0))
+
+            def render(*_a) -> None:
+                if v.get():
+                    toggle.configure(text="ON ●", fg="#ffffff",
+                                     bg=COLORS["accent"])
+                else:
+                    toggle.configure(text="● OFF", fg=COLORS["fg_muted"],
+                                     bg=COLORS["input_bg"])
+
+            def flip(_e=None) -> None:
+                v.set(not v.get())
+                render()
+
+            toggle.bind("<Button-1>", flip)
+            render()
 
         bool_row("DryRun",
                  "Dry run (do not actually shut down)",
@@ -758,7 +830,7 @@ class SettingsPanel(_PanelBase):  # pragma: no cover - GUI
                  "Don't shut down while the camera is in use", "")
 
         # Buttons
-        btns = ttk.Frame(wrap, style="Panel.TFrame")
+        btns = self.tk.Frame(wrap, bg=COLORS["panel"])
         btns.pack(fill="x", pady=(20, 28), **pad)
 
         def save() -> None:
@@ -778,11 +850,17 @@ class SettingsPanel(_PanelBase):  # pragma: no cover - GUI
             else:
                 messagebox.showinfo("Saved", "Settings updated.")
 
-        ttk.Button(btns, text="Save changes", style="Accent.TButton",
-                   command=save).pack(side="left")
-        ttk.Button(btns, text="Reload",
-                   command=lambda: SettingsPanel(self.parent, self.tk, self.ttk).build()
-                   or self.parent.update_idletasks()).pack(side="left", padx=(8, 0))
+        save_btn = _make_button(
+            btns, text="Save changes", bg=COLORS["accent"],
+            hover_bg=COLORS["accent_hi"], fg="#ffffff", command=save,
+        )
+        save_btn.pack(side="left")
+        reload_btn = _make_button(
+            btns, text="Reload", bg=COLORS["sidebar_hi"],
+            hover_bg=COLORS["border"], fg=COLORS["fg"],
+            command=lambda: SettingsPanel(self.parent, self.tk, self.ttk).build(),
+        )
+        reload_btn.pack(side="left", padx=(10, 0))
 
 
 class SnapshotsPanel(_PanelBase):  # pragma: no cover - GUI
