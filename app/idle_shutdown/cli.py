@@ -432,6 +432,78 @@ def cmd_install_autostart() -> None:
     click.echo(f"autostart installed: {cmd}")
 
 
+@cli.command("tray")
+def cmd_tray() -> None:
+    """Run the system-tray status icon (requires the optional 'tray' extras).
+
+    Install with:  pip install -e ".[tray]"
+    Reads live state from the DB; safe to run alongside `idle-shutdown run`.
+    """
+    from idle_shutdown.db.repos import SettingsRepo
+    from idle_shutdown.enums import SnapshotTriggerKind
+    from idle_shutdown.snapshot import take_snapshot
+    try:
+        from idle_shutdown.platform import get_default_idle_source
+    except Exception:  # noqa: BLE001
+        get_default_idle_source = None  # type: ignore[assignment]
+
+    idle_src = get_default_idle_source() if get_default_idle_source else None
+
+    def _idle_seconds() -> int:
+        if idle_src is None:
+            return 0
+        try:
+            return int(idle_src.get_idle_ms() / 1000)
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _service_enabled() -> bool:
+        with connect() as conn:
+            return SettingsRepo(conn).get("ServiceState") == "Enabled"
+
+    def _latest_snapshot() -> tuple[Optional[int], Optional[str]]:
+        with connect() as conn:
+            row = conn.execute(
+                "SELECT SnapshotId, CreatedAt FROM Snapshot "
+                "ORDER BY SnapshotId DESC LIMIT 1"
+            ).fetchone()
+            if not row:
+                return None, None
+            return int(row["SnapshotId"]), str(row["CreatedAt"])
+
+    def _snooze_minutes() -> int:
+        with connect() as conn:
+            return int(SettingsRepo(conn).get("SnoozeMinutes") or 30)
+
+    def _snapshot_now() -> None:
+        take_snapshot(SnapshotTriggerKind.Manual, record_log=False)
+
+    def _snooze(mins: int) -> None:
+        from idle_shutdown.db.connection import utc_now_iso
+        from datetime import datetime, timedelta, timezone
+        until = datetime.now(timezone.utc) + timedelta(minutes=mins)
+        with connect() as conn:
+            SettingsRepo(conn).set(
+                "DisabledUntil", until.strftime("%Y-%m-%dT%H:%M:%SZ"))
+
+    def _quit() -> None:
+        click.echo("tray: quit")
+
+    try:
+        from idle_shutdown.tray import run_tray
+        run_tray(
+            get_idle_seconds=_idle_seconds,
+            get_service_enabled=_service_enabled,
+            get_latest_snapshot=_latest_snapshot,
+            get_snooze_minutes=_snooze_minutes,
+            snapshot_now=_snapshot_now,
+            snooze=_snooze,
+            on_quit=_quit,
+        )
+    except RuntimeError as e:
+        raise click.ClickException(str(e))
+
+
 @cli.command("uninstall-autostart")
 def cmd_uninstall_autostart() -> None:
     """Remove the HKCU Run entry."""
