@@ -280,7 +280,8 @@ def restore(
 
     logger.info("event=restore_started snapshot_id=%d apps=%d chrome_tabs=%d",
                 data.snapshot_id, len(data.apps), len(data.chrome_tabs))
-    ensure_desktops(data.desktop_count)
+    if not dry_run:
+        ensure_desktops(data.desktop_count)
 
     live = list(live_fn())
     launched = skipped = 0
@@ -290,7 +291,7 @@ def restore(
     apps_sorted = sorted(enumerate(data.apps), key=lambda t: (t[1].desktop_index, t[0]))
     for desk_idx, group in groupby(apps_sorted, key=lambda t: t[1].desktop_index):
         group_apps = [a for _, a in group]
-        if data.desktop_count > 1:
+        if data.desktop_count > 1 and not dry_run:
             switch_to_desktop(desk_idx)
         for app in group_apps:
             if _is_duplicate(app, live):
