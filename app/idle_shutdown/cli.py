@@ -342,6 +342,44 @@ def cmd_show(snapshot_id: Optional[int], as_json: bool, max_tabs: int) -> None:
 # ----- placeholders for later phases ----------------------------------------
 
 
+def _make_toast_notifier():
+    """Return a (title, message) -> None notifier.
+
+    Tries plyer first (cross-platform, ships a Windows toast backend), then
+    win10toast on Windows, then falls back to a logger-only stub.
+    """
+    import logging as _logging
+    log = _logging.getLogger(__name__)
+    try:
+        from plyer import notification  # type: ignore
+
+        def _notify(title: str, message: str) -> None:
+            try:
+                notification.notify(title=title, message=message,
+                                    app_name="Idle-Shutdown", timeout=10)
+            except Exception:  # noqa: BLE001
+                log.warning("event=toast_plyer_failed title=%r", title)
+        return _notify
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from win10toast import ToastNotifier  # type: ignore
+        _toaster = ToastNotifier()
+
+        def _notify_w(title: str, message: str) -> None:
+            try:
+                _toaster.show_toast(title, message, duration=10, threaded=True)
+            except Exception:  # noqa: BLE001
+                log.warning("event=toast_win10toast_failed title=%r", title)
+        return _notify_w
+    except Exception:  # noqa: BLE001
+        pass
+
+    def _notify_log(title: str, message: str) -> None:
+        log.warning("event=toast_fallback title=%r message=%r", title, message)
+    return _notify_log
+
+
 @cli.command("run")
 @click.option("--silent", is_flag=True, help="Suppress console window (Phase 2).")
 @click.option("--dry-run/--no-dry-run", "dry_run_flag", default=None,
@@ -425,6 +463,7 @@ def cmd_run(silent: bool, dry_run_flag: Optional[bool]) -> None:  # noqa: ARG001
         pass
     heartbeat = HeartbeatScheduler(
         take_snapshot=lambda trigger: take_snapshot(trigger, record_log=False),
+        notifier=_make_toast_notifier(),
     )
     heartbeat.mark_started()
     monitor = IdleMonitor(
