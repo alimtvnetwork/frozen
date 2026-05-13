@@ -6,6 +6,7 @@ the popup, snapshot, and shutdown callables. Tests inject fakes.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Callable
 
@@ -21,6 +22,7 @@ class ServiceCallbacks:
     get_idle_threshold_minutes: Callable[[], int]
     get_popup_countdown_seconds: Callable[[], int]
     get_service_enabled: Callable[[], bool]
+    get_snooze_minutes: Callable[[], int] = lambda: 30
 
 
 class IdleService:
@@ -30,6 +32,8 @@ class IdleService:
         self.cb = callbacks
         self.state: MonitorStateName = MonitorStateName.Idle
         self._popup_open = False
+        self._snooze_until: float = 0.0
+        self._clock: Callable[[], float] = time.monotonic
 
     # Threshold provider for IdleMonitor ------------------------------------
     def threshold_ms(self) -> int:
@@ -40,6 +44,10 @@ class IdleService:
     def on_threshold_reached(self) -> None:
         if not self.cb.get_service_enabled():
             logger.info("event=threshold_skipped reason=disabled")
+            return
+        if self._clock() < self._snooze_until:
+            logger.info("event=threshold_skipped reason=snoozed remaining_s=%d",
+                        int(self._snooze_until - self._clock()))
             return
         if self._popup_open:
             logger.debug("event=threshold_skipped reason=popup_already_open")
@@ -66,6 +74,12 @@ class IdleService:
             return
         if result == PopupResult.ActivityDuringPrompt:
             self.state = MonitorStateName.Idle
+            return
+        if result == PopupResult.Snooze:
+            mins = max(1, int(self.cb.get_snooze_minutes()))
+            self._snooze_until = self._clock() + mins * 60
+            self.state = MonitorStateName.Idle
+            logger.info("event=snoozed minutes=%d", mins)
             return
         # No or Timeout → snapshot + shutdown
         self.state = MonitorStateName.Snapshotting

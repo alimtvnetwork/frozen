@@ -27,6 +27,7 @@ class PopupResult(str, Enum):
     No = "No"
     Timeout = "Timeout"
     ActivityDuringPrompt = "ActivityDuringPrompt"
+    Snooze = "Snooze"
 
 
 class MonitorStateName(str, Enum):

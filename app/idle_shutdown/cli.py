@@ -277,6 +277,7 @@ def cmd_run(silent: bool, dry_run_flag: Optional[bool]) -> None:  # noqa: ARG001
         get_idle_threshold_minutes=lambda: int(_settings_provider("IdleThresholdMinutes")),
         get_popup_countdown_seconds=lambda: int(_settings_provider("PopupCountdownSeconds")),
         get_service_enabled=lambda: _settings_provider("ServiceState") == "Enabled",
+        get_snooze_minutes=lambda: int(_settings_provider("SnoozeMinutes")),
     )
     service = IdleService(callbacks)
     def _guard_cfg() -> GuardConfig:

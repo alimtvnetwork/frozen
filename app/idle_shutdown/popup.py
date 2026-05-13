@@ -17,6 +17,8 @@ from idle_shutdown.enums import PopupResult
 def show_popup(
     countdown_seconds: int,
     on_result: Callable[[PopupResult], None],
+    *,
+    snooze_minutes: int = 30,
 ) -> None:  # pragma: no cover - GUI
     import tkinter as tk
 
@@ -26,7 +28,7 @@ def show_popup(
     win.title("Idle Shutdown")
     win.attributes("-topmost", True)
     win.protocol("WM_DELETE_WINDOW", lambda: _finish(PopupResult.No))
-    win.geometry("360x140")
+    win.geometry("420x160")
 
     state = {"remaining_ms": countdown_seconds * 1000, "done": False}
 
@@ -49,8 +51,12 @@ def show_popup(
             finally:
                 root.destroy()
 
-    tk.Button(btns, text="Yes", width=10, command=lambda: _finish(PopupResult.Yes)).pack(side="left", padx=8)
-    tk.Button(btns, text="No",  width=10, command=lambda: _finish(PopupResult.No)).pack(side="left", padx=8)
+    tk.Button(btns, text="Yes", width=10,
+              command=lambda: _finish(PopupResult.Yes)).pack(side="left", padx=6)
+    tk.Button(btns, text=f"Snooze {snooze_minutes}m", width=12,
+              command=lambda: _finish(PopupResult.Snooze)).pack(side="left", padx=6)
+    tk.Button(btns, text="No",  width=10,
+              command=lambda: _finish(PopupResult.No)).pack(side="left", padx=6)
 
     def _tick() -> None:
         if state["done"]:
