@@ -16,3 +16,7 @@ pytest-cov>=5.0
 ruff>=0.5
 mypy>=1.10
 pyinstaller>=6.0
+
+[tray]
+pystray>=0.19
+Pillow>=10.0

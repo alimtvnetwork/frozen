@@ -16,3 +16,6 @@ Requires-Dist: pytest-cov>=5.0; extra == "dev"
 Requires-Dist: ruff>=0.5; extra == "dev"
 Requires-Dist: mypy>=1.10; extra == "dev"
 Requires-Dist: pyinstaller>=6.0; extra == "dev"
+Provides-Extra: tray
+Requires-Dist: pystray>=0.19; extra == "tray"
+Requires-Dist: Pillow>=10.0; extra == "tray"
