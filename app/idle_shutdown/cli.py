@@ -584,6 +584,133 @@ def cmd_install_autostart() -> None:
     click.echo(f"autostart installed: {cmd}")
 
 
+# ----- doctor ----------------------------------------------------------------
+
+
+@cli.command("doctor")
+def cmd_doctor() -> None:
+    """Preflight diagnostic. Run before the Phase 5 real-shutdown smoke test.
+
+    Checks: DB writable, schema present, idle source, Chrome detected,
+    autostart installed, single-instance lock free, latest snapshot freshness.
+    Exits 0 if all green, 1 if any FAIL.
+    """
+    import os
+    from datetime import datetime, timezone
+    from idle_shutdown.config import db_path, app_data_dir, lock_path
+
+    results: list[tuple[str, str, str]] = []  # (status, name, detail)
+    OK, WARN, FAIL = "OK", "WARN", "FAIL"
+
+    # 1. App dir + DB
+    try:
+        ad = app_data_dir()
+        ad.mkdir(parents=True, exist_ok=True)
+        results.append((OK, "app data dir", str(ad)))
+    except Exception as e:  # noqa: BLE001
+        results.append((FAIL, "app data dir", str(e)))
+
+    try:
+        with connect() as conn:
+            n = conn.execute(
+                "SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table'"
+            ).fetchone()["n"]
+        results.append((OK, "database", f"{db_path()} ({n} tables)"))
+    except Exception as e:  # noqa: BLE001
+        results.append((FAIL, "database",
+                        f"{e} — run `idle-shutdown init-db`"))
+
+    # 2. Single-instance lock
+    try:
+        lp = lock_path()
+        if lp.exists():
+            results.append((WARN, "instance lock",
+                            f"lock file present at {lp} — another instance may be running"))
+        else:
+            results.append((OK, "instance lock", "free"))
+    except Exception as e:  # noqa: BLE001
+        results.append((WARN, "instance lock", str(e)))
+
+    # 3. Idle source
+    try:
+        from idle_shutdown.platform import get_default_idle_source
+        ms = get_default_idle_source().get_idle_ms()
+        results.append((OK, "idle source", f"reports {int(ms / 1000)}s"))
+    except Exception as e:  # noqa: BLE001
+        results.append((WARN, "idle source",
+                        f"{e} — popup/countdown won't trigger automatically"))
+
+    # 4. Chrome detected
+    try:
+        from idle_shutdown.capture.chrome import detect_chrome_path
+        exe = detect_chrome_path()
+        if exe:
+            results.append((OK, "chrome", exe))
+        else:
+            results.append((WARN, "chrome",
+                            "not detected — tab capture/restore will be skipped"))
+    except Exception as e:  # noqa: BLE001
+        results.append((WARN, "chrome", str(e)))
+
+    # 5. Autostart
+    try:
+        from idle_shutdown.autostart import is_autostart_installed
+        if is_autostart_installed():
+            results.append((OK, "autostart", "registered (HKCU Run)"))
+        else:
+            results.append((WARN, "autostart",
+                            "not installed — run `idle-shutdown install-autostart`"))
+    except Exception as e:  # noqa: BLE001
+        results.append((WARN, "autostart", str(e)))
+
+    # 6. Latest snapshot freshness (compare against background interval)
+    try:
+        with connect() as conn:
+            row = conn.execute(
+                "SELECT SnapshotId, CreatedAt FROM Snapshot "
+                "ORDER BY SnapshotId DESC LIMIT 1"
+            ).fetchone()
+            interval_min = int(SettingsRepo(conn).get(
+                "BackgroundSnapshotIntervalMinutes") or 5)
+        if not row:
+            results.append((WARN, "latest snapshot",
+                            "none yet — run `idle-shutdown snapshot`"))
+        else:
+            ts = datetime.fromisoformat(
+                str(row["CreatedAt"]).replace("Z", "+00:00"))
+            age_s = int((datetime.now(timezone.utc) - ts).total_seconds())
+            label = f"#{row['SnapshotId']} · {age_s}s old"
+            # Allow up to 3x background interval before warning.
+            if age_s > interval_min * 60 * 3:
+                results.append((WARN, "latest snapshot",
+                                f"{label} (older than 3× background interval)"))
+            else:
+                results.append((OK, "latest snapshot", label))
+    except Exception as e:  # noqa: BLE001
+        results.append((WARN, "latest snapshot", str(e)))
+
+    # 7. DryRun banner — informational, never failing
+    try:
+        with connect() as conn:
+            dry = str(SettingsRepo(conn).get("DryRun") or "true").lower() == "true"
+        results.append((OK if dry else WARN, "shutdown mode",
+                        "DRY RUN (safe)" if dry else "LIVE — will power off the machine"))
+    except Exception as e:  # noqa: BLE001
+        results.append((WARN, "shutdown mode", str(e)))
+
+    table = Table(title="idle-shutdown doctor")
+    table.add_column("Status")
+    table.add_column("Check")
+    table.add_column("Detail")
+    color = {OK: "green", WARN: "yellow", FAIL: "red"}
+    for status, name, detail in results:
+        table.add_row(f"[{color[status]}]{status}[/]", name, detail)
+    console.print(table)
+
+    if any(s == FAIL for s, _, _ in results):
+        raise click.exceptions.Exit(1)
+
+
 @cli.command("tray")
 def cmd_tray() -> None:
     """Run the system-tray status icon (requires the optional 'tray' extras).
