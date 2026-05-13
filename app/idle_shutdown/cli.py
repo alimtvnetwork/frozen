@@ -439,7 +439,7 @@ def cmd_tray() -> None:
     Install with:  pip install -e ".[tray]"
     Reads live state from the DB; safe to run alongside `idle-shutdown run`.
     """
-    from idle_shutdown.db.repos import SettingsRepo, SnapshotRepo
+    from idle_shutdown.db.repos import SettingsRepo
     from idle_shutdown.enums import SnapshotTriggerKind
     from idle_shutdown.snapshot import take_snapshot
     try:
