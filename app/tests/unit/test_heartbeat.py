@@ -112,3 +112,47 @@ def test_prune_background_older_than_only_touches_background(temp_db):
         ).fetchall()}
     assert bg_old not in ids
     assert manual in ids and bg_recent in ids
+
+
+def test_snapshot_failure_notification_fires_after_threshold(temp_db):
+    init_db()
+    with connect() as conn:
+        SettingsRepo(conn).set("BackgroundSnapshotIntervalMinutes", 1)
+        SettingsRepo(conn).set("SnapshotFailureNotifyThreshold", 2)
+
+    def _boom(_t):
+        raise RuntimeError("snapshot exploded")
+
+    notes: list[tuple[str, str]] = []
+    clk = _Clock()
+    hb = HeartbeatScheduler(
+        take_snapshot=_boom, clock=clk,
+        notifier=lambda t, m: notes.append((t, m)),
+    )
+    hb.tick(busy=False)  # failure 1
+    assert notes == []
+    clk.advance(120)
+    hb.tick(busy=False)  # failure 2 -> notify
+    assert len(notes) == 1
+    # No re-notification on the same streak.
+    clk.advance(120)
+    hb.tick(busy=False)
+    assert len(notes) == 1
+    with connect() as conn:
+        assert int(SettingsRepo(conn).get("ConsecutiveSnapshotFailures")) == 3
+
+
+def test_snapshot_failure_counter_resets_on_success(temp_db):
+    init_db()
+    with connect() as conn:
+        SettingsRepo(conn).set("BackgroundSnapshotIntervalMinutes", 1)
+        SettingsRepo(conn).set("ConsecutiveSnapshotFailures", 5)
+
+    class _R:
+        snapshot_id = 99
+
+    clk = _Clock()
+    hb = HeartbeatScheduler(take_snapshot=lambda _t: _R(), clock=clk)
+    hb.tick(busy=False)
+    with connect() as conn:
+        assert int(SettingsRepo(conn).get("ConsecutiveSnapshotFailures")) == 0

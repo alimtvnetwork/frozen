@@ -27,6 +27,12 @@ logger = logging.getLogger(__name__)
 _HEARTBEAT_WRITE_INTERVAL_S = 30.0
 
 
+def _default_notifier(title: str, message: str) -> None:
+    """Fallback notifier — logs at WARNING. CLI can pass a real toast hook."""
+    logger.warning("event=snapshot_failure_notify title=%r message=%r",
+                   title, message)
+
+
 class HeartbeatScheduler:
     """Drives periodic background snapshots from the monitor tick.
 
@@ -40,11 +46,14 @@ class HeartbeatScheduler:
         self,
         take_snapshot: Callable[[SnapshotTriggerKind], object],
         clock: Callable[[], float] = time.monotonic,
+        notifier: Callable[[str, str], None] | None = None,
     ) -> None:
         self._take_snapshot = take_snapshot
         self._clock = clock
+        self._notifier = notifier or _default_notifier
         self._last_snapshot_at: float | None = None
         self._last_heartbeat_write: float = 0.0
+        self._notified_for_streak: bool = False
 
     # ----- lifecycle -------------------------------------------------------
 
@@ -102,8 +111,10 @@ class HeartbeatScheduler:
                 "event=background_snapshot snapshot_id=%s",
                 getattr(res, "snapshot_id", "?"),
             )
+            self._record_snapshot_success()
         except Exception:  # noqa: BLE001
             logger.exception("event=background_snapshot_failed")
+            self._record_snapshot_failure()
             return
         # Phase D: prune old Background snapshots.
         try:
@@ -116,6 +127,38 @@ class HeartbeatScheduler:
                     )
         except Exception:  # noqa: BLE001
             logger.exception("event=background_snapshot_prune_failed")
+
+    # ----- failure tracking ------------------------------------------------
+
+    def _record_snapshot_success(self) -> None:
+        self._notified_for_streak = False
+        try:
+            with connect() as conn:
+                SettingsRepo(conn).set("ConsecutiveSnapshotFailures", "0")
+        except Exception:  # noqa: BLE001
+            logger.exception("event=snapshot_failure_reset_failed")
+
+    def _record_snapshot_failure(self) -> None:
+        try:
+            with connect() as conn:
+                repo = SettingsRepo(conn)
+                count = int(repo.get("ConsecutiveSnapshotFailures") or 0) + 1
+                threshold = int(repo.get("SnapshotFailureNotifyThreshold") or 3)
+                repo.set("ConsecutiveSnapshotFailures", str(count))
+                repo.set("LastSnapshotFailureAt", utc_now_iso())
+        except Exception:  # noqa: BLE001
+            logger.exception("event=snapshot_failure_record_failed")
+            return
+        if count >= threshold and not self._notified_for_streak:
+            self._notified_for_streak = True
+            try:
+                self._notifier(
+                    "Idle-Shutdown: snapshots failing",
+                    f"{count} consecutive background snapshots have failed. "
+                    "Crash recovery may be stale — run `idle-shutdown doctor`.",
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("event=snapshot_failure_notify_dispatch_failed")
 
 
 # ----- crash recovery query -------------------------------------------------

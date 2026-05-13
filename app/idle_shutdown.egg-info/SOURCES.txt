@@ -10,6 +10,7 @@ idle_shutdown/diff.py
 idle_shutdown/enums.py
 idle_shutdown/errors.py
 idle_shutdown/export.py
+idle_shutdown/heartbeat.py
 idle_shutdown/logging_setup.py
 idle_shutdown/monitor.py
 idle_shutdown/platform.py
@@ -19,6 +20,7 @@ idle_shutdown/service.py
 idle_shutdown/shutdown.py
 idle_shutdown/single_instance.py
 idle_shutdown/snapshot.py
+idle_shutdown/tray.py
 idle_shutdown.egg-info/PKG-INFO
 idle_shutdown.egg-info/SOURCES.txt
 idle_shutdown.egg-info/dependency_links.txt
