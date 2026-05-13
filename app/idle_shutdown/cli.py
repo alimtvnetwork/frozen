@@ -849,6 +849,76 @@ def cmd_reset_failures() -> None:
     click.echo(f"reset · cleared {prev} consecutive failures")
 
 
+@cli.command("self-test")
+@click.option("--keep", is_flag=True,
+              help="Keep the test snapshot instead of deleting it.")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def cmd_self_test(keep: bool, as_json: bool) -> None:
+    """End-to-end integrity check: snapshot → dry-run restore → report.
+
+    Captures a fresh snapshot, replays it with ``--dry-run`` (no apps are
+    actually launched, no shutdown), and prints what restore *would* do.
+    The test snapshot is deleted afterward unless ``--keep`` is passed.
+    Exits non-zero if either step fails.
+    """
+    import json as _json
+    from idle_shutdown.snapshot import take_snapshot
+    from idle_shutdown.enums import SnapshotTriggerKind
+    from idle_shutdown.restore import restore as do_restore
+
+    report: dict = {"snapshot": None, "restore": None, "ok": False}
+    try:
+        snap = take_snapshot(SnapshotTriggerKind.Manual, record_log=False)
+        report["snapshot"] = {
+            "id": int(snap.snapshot_id),
+            "apps": int(getattr(snap, "apps", 0) or 0),
+            "chrome_tabs": int(getattr(snap, "chrome_tabs", 0) or 0),
+            "desktops": int(getattr(snap, "desktops", 0) or 0),
+        }
+    except Exception as e:  # noqa: BLE001
+        report["error"] = f"snapshot failed: {e}"
+        click.echo(_json.dumps(report, indent=2) if as_json
+                   else f"FAIL · snapshot: {e}", err=True)
+        raise click.exceptions.Exit(1)
+
+    try:
+        res = do_restore(snap.snapshot_id, dry_run=True)
+        report["restore"] = {
+            "snapshot_id": int(res.snapshot_id),
+            "apps_launched": int(res.apps_launched),
+            "apps_skipped": int(res.apps_skipped),
+            "apps_excluded": int(getattr(res, "apps_excluded", 0)),
+            "chrome_launched": bool(res.chrome_launched),
+            "variants": list(getattr(res, "variants_launched", ())),
+        }
+        report["ok"] = True
+    except Exception as e:  # noqa: BLE001
+        report["error"] = f"restore failed: {e}"
+        click.echo(_json.dumps(report, indent=2) if as_json
+                   else f"FAIL · restore: {e}", err=True)
+        raise click.exceptions.Exit(1)
+    finally:
+        if not keep and report["snapshot"]:
+            try:
+                with connect() as conn:
+                    conn.execute("DELETE FROM Snapshot WHERE SnapshotId = ?",
+                                 (report["snapshot"]["id"],))
+            except Exception:  # noqa: BLE001
+                pass
+
+    if as_json:
+        click.echo(_json.dumps(report, indent=2))
+    else:
+        s, r = report["snapshot"], report["restore"]
+        click.echo(
+            f"OK · snapshot #{s['id']} captured "
+            f"({s['apps']} apps, {s['chrome_tabs']} tabs, {s['desktops']} desktops)\n"
+            f"OK · dry-run restore would launch "
+            f"{r['apps_launched']} apps (skip {r['apps_skipped']}, "
+            f"exclude {r['apps_excluded']}), chrome={r['chrome_launched']}"
+        )
+
+
 @cli.command("tray")
 def cmd_tray() -> None:
     """Run the system-tray status icon (requires the optional 'tray' extras).
