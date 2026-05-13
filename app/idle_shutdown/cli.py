@@ -425,6 +425,7 @@ def cmd_run(silent: bool, dry_run_flag: Optional[bool]) -> None:  # noqa: ARG001
         pass
     heartbeat = HeartbeatScheduler(
         take_snapshot=lambda trigger: take_snapshot(trigger, record_log=False),
+        notifier=_make_toast_notifier(),
     )
     heartbeat.mark_started()
     monitor = IdleMonitor(
