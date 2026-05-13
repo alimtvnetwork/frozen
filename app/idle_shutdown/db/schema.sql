@@ -80,6 +80,17 @@ CREATE TABLE IF NOT EXISTS ShutdownCounter (
 CREATE INDEX IF NOT EXISTS IX_Snapshot_CreatedAt ON Snapshot(CreatedAt DESC);
 CREATE INDEX IF NOT EXISTS IX_ShutdownLog_OccurredAt ON ShutdownLog(OccurredAt DESC);
 
+-- Per-app restore exclusions (Phase 7).
+-- Apps whose normalized executable path matches an entry here are NEVER
+-- relaunched by the restore flow. Capture is unaffected — we still snapshot
+-- them; we just skip the spawn during restore.
+CREATE TABLE IF NOT EXISTS RestoreExclusion (
+  RestoreExclusionId INTEGER PRIMARY KEY AUTOINCREMENT,
+  ExecutablePath TEXT NOT NULL UNIQUE,
+  Reason TEXT NOT NULL DEFAULT '',
+  CreatedAt TEXT NOT NULL
+);
+
 -- Lookup seeds (idempotent)
 INSERT OR IGNORE INTO SnapshotTriggerKind (SnapshotTriggerKindId, KindName) VALUES
   (1, 'Auto'), (2, 'Manual'), (3, 'Scheduled'), (4, 'Background');

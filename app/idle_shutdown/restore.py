@@ -29,7 +29,7 @@ from itertools import groupby
 from typing import Callable, Iterable, Optional
 
 from idle_shutdown.db.connection import connect, utc_now_iso
-from idle_shutdown.db.repos import SettingsRepo
+from idle_shutdown.db.repos import RestoreExclusionRepo, SettingsRepo, _norm_exe
 from idle_shutdown.errors import RestoreError
 from idle_shutdown.capture.chrome import detect_variant_executable
 
@@ -256,6 +256,7 @@ class RestoreResult:
     apps_skipped: int
     chrome_launched: bool
     variants_launched: tuple[str, ...] = ()
+    apps_excluded: int = 0
 
 
 def restore(
@@ -284,7 +285,9 @@ def restore(
         ensure_desktops(data.desktop_count)
 
     live = list(live_fn())
-    launched = skipped = 0
+    launched = skipped = excluded = 0
+    with connect() as conn:
+        excluded_paths = RestoreExclusionRepo(conn).excluded_paths()
 
     # Group apps by target desktop so we switch once per desktop, preserving
     # the original AppProcessId order within each group.
@@ -294,6 +297,11 @@ def restore(
         if data.desktop_count > 1 and not dry_run:
             switch_to_desktop(desk_idx)
         for app in group_apps:
+            if excluded_paths and _norm_exe(app.executable_path) in excluded_paths:
+                logger.info("event=skip_relaunch exe=%s reason=excluded",
+                            app.executable_path)
+                excluded += 1
+                continue
             if _is_duplicate(app, live):
                 logger.info("event=skip_relaunch exe=%s doc=%s reason=already_running",
                             app.executable_path, app.document_path)
@@ -370,4 +378,5 @@ def restore(
         apps_skipped=skipped,
         chrome_launched=chrome_launched,
         variants_launched=tuple(variants_launched),
+        apps_excluded=excluded,
     )

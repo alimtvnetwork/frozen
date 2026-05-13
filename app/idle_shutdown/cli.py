@@ -555,6 +555,7 @@ def cmd_restore(snapshot_id: Optional[int], dry_run: bool) -> None:
     click.echo(
         f"restored snapshot {result.snapshot_id}: "
         f"launched={result.apps_launched} skipped={result.apps_skipped} "
+        f"excluded={result.apps_excluded} "
         f"chrome={'yes' if result.chrome_launched else 'no'}"
         + (f" variants={','.join(result.variants_launched)}"
            if result.variants_launched else "")
@@ -582,6 +583,54 @@ def cmd_install_autostart() -> None:
     from idle_shutdown.autostart import default_executable_path, install_autostart
     cmd = install_autostart(default_executable_path())
     click.echo(f"autostart installed: {cmd}")
+
+
+# ----- exclude (per-app restore exclusions) ---------------------------------
+
+
+@cli.group("exclude")
+def cmd_exclude() -> None:
+    """Manage apps that should never be relaunched by `restore`."""
+
+
+@cmd_exclude.command("add")
+@click.argument("executable_path")
+@click.option("--reason", default="", help="Free-text note (e.g. 'password manager').")
+def cmd_exclude_add(executable_path: str, reason: str) -> None:
+    from idle_shutdown.db.repos import RestoreExclusionRepo
+    with connect() as conn:
+        RestoreExclusionRepo(conn).add(executable_path, reason)
+    click.echo(f"excluded: {executable_path}")
+
+
+@cmd_exclude.command("remove")
+@click.argument("executable_path")
+def cmd_exclude_remove(executable_path: str) -> None:
+    from idle_shutdown.db.repos import RestoreExclusionRepo
+    with connect() as conn:
+        n = RestoreExclusionRepo(conn).remove(executable_path)
+    if n:
+        click.echo(f"removed: {executable_path}")
+    else:
+        click.echo(f"not found: {executable_path}", err=True)
+        raise click.exceptions.Exit(1)
+
+
+@cmd_exclude.command("list")
+def cmd_exclude_list() -> None:
+    from idle_shutdown.db.repos import RestoreExclusionRepo
+    with connect() as conn:
+        rows = RestoreExclusionRepo(conn).list()
+    if not rows:
+        click.echo("(no exclusions)")
+        return
+    t = Table(title="Restore exclusions")
+    t.add_column("Executable")
+    t.add_column("Reason")
+    t.add_column("Added")
+    for r in rows:
+        t.add_row(r.executable_path, r.reason or "-", r.created_at)
+    console.print(t)
 
 
 # ----- doctor ----------------------------------------------------------------
