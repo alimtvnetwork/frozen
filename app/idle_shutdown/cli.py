@@ -463,10 +463,13 @@ def cmd_tray() -> None:
 
     def _latest_snapshot() -> tuple[Optional[int], Optional[str]]:
         with connect() as conn:
-            row = SnapshotRepo(conn).latest()
+            row = conn.execute(
+                "SELECT SnapshotId, CreatedAt FROM Snapshot "
+                "ORDER BY SnapshotId DESC LIMIT 1"
+            ).fetchone()
             if not row:
                 return None, None
-            return int(row["Id"]), str(row["CreatedAt"])
+            return int(row["SnapshotId"]), str(row["CreatedAt"])
 
     def _snooze_minutes() -> int:
         with connect() as conn:
