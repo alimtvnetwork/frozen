@@ -29,7 +29,7 @@ from itertools import groupby
 from typing import Callable, Iterable, Optional
 
 from idle_shutdown.db.connection import connect, utc_now_iso
-from idle_shutdown.db.repos import RestoreExclusionRepo, SettingsRepo
+from idle_shutdown.db.repos import RestoreExclusionRepo, SettingsRepo, _norm_exe
 from idle_shutdown.errors import RestoreError
 from idle_shutdown.capture.chrome import detect_variant_executable
 
@@ -297,7 +297,7 @@ def restore(
         if data.desktop_count > 1 and not dry_run:
             switch_to_desktop(desk_idx)
         for app in group_apps:
-            if excluded_paths and _norm(app.executable_path) in excluded_paths:
+            if excluded_paths and _norm_exe(app.executable_path) in excluded_paths:
                 logger.info("event=skip_relaunch exe=%s reason=excluded",
                             app.executable_path)
                 excluded += 1
