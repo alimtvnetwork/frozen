@@ -597,6 +597,15 @@ class _MainWindow:  # pragma: no cover - GUI
                      fg="#ffffff",
                      command=lambda: finish(PopupResult.Yes),
                      padx=24, pady=10).pack(side="left", padx=8, pady=8)
+        try:
+            snooze_min = int(_get_setting("SnoozeMinutes"))
+        except Exception:  # noqa: BLE001
+            snooze_min = 30
+        _make_button(btns, text=f"Snooze {snooze_min}m",
+                     bg=COLORS["sidebar_hi"], hover_bg=COLORS["border"],
+                     fg=COLORS["fg"],
+                     command=lambda: finish(PopupResult.Snooze),
+                     padx=18, pady=10).pack(side="left", padx=8, pady=8)
         _make_button(btns, text="No, shut down",
                      bg=COLORS["err"], hover_bg="#ff6b62",
                      fg="#ffffff",
