@@ -408,6 +408,21 @@ def cmd_restore(snapshot_id: Optional[int]) -> None:
     )
 
 
+@cli.command("recover")
+def cmd_recover() -> None:
+    """Detect an unexpected shutdown and report what's recoverable."""
+    from idle_shutdown.heartbeat import detect_crash_recovery_candidate
+    is_crash, snap_id, last_hb = detect_crash_recovery_candidate()
+    if not is_crash:
+        click.echo("no crash detected — last shutdown was clean")
+        return
+    click.echo(
+        f"⚠ unexpected shutdown detected. Last heartbeat: {last_hb or 'unknown'}.\n"
+        f"Latest snapshot: #{snap_id}.\n"
+        f"To restore: idle-shutdown restore --snapshot-id {snap_id}"
+    )
+
+
 @cli.command("install-autostart")
 def cmd_install_autostart() -> None:
     """Write the HKCU Run entry so the service starts on login."""
