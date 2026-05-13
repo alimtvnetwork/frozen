@@ -93,6 +93,23 @@ class SnapshotRepo:
         )
         return cur.rowcount or 0
 
+    def prune_background_older_than(self, retention_days: int) -> int:
+        """Delete Background snapshots older than ``retention_days`` days.
+
+        Other trigger kinds (Auto, Manual, Scheduled) are never touched here.
+        Returns rows deleted. Children cascade via FK.
+        """
+        if retention_days < 1:
+            raise ValueError("retention_days must be >= 1")
+        from idle_shutdown.enums import SnapshotTriggerKind
+        cur = self.conn.execute(
+            "DELETE FROM Snapshot "
+            "WHERE TriggerKindId = ? "
+            "  AND CreatedAt < datetime('now', ?)",
+            (int(SnapshotTriggerKind.Background), f"-{int(retention_days)} days"),
+        )
+        return cur.rowcount or 0
+
 
 # ----- Shutdown log + counter -----------------------------------------------
 
