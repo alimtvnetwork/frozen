@@ -21,11 +21,11 @@ def _seed(temp_db) -> None:
                 working_directory=None, desktop_index=0),
     ]
     providers = SnapshotProviders(
-        apps=lambda: apps,
-        desktops=lambda: 1,
-        chrome=lambda: ChromeSession(executable_path=None, profiles=()),
+        capture_desktops_fn=lambda: (1, {}),
+        enumerate_apps_fn=lambda _pids: apps,
+        capture_chrome_fn=lambda: ChromeSession(executable_path=None, profiles=()),
     )
-    take_snapshot(SnapshotTriggerKind.Manual, record_log=False, providers=providers)
+    take_snapshot(SnapshotTriggerKind.Manual, providers, record_log=False)
 
 
 def test_exclusion_add_list_remove(temp_db):
