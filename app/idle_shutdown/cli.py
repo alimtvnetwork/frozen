@@ -147,6 +147,8 @@ def cmd_status(as_json: bool) -> None:
             "BackgroundSnapshotsEnabled", "BackgroundSnapshotIntervalMinutes",
             "DisabledUntil", "LastHeartbeatAt", "CleanShutdown",
             "LastRestoredSnapshotId", "LastRestoredAt",
+            "ConsecutiveSnapshotFailures", "LastSnapshotFailureAt",
+            "SnapshotFailureNotifyThreshold",
         )}
         snap_row = conn.execute(
             "SELECT SnapshotId, CreatedAt, TriggerKindId FROM Snapshot "
@@ -179,6 +181,9 @@ def cmd_status(as_json: bool) -> None:
             "interval_minutes": int(settings["BackgroundSnapshotIntervalMinutes"]),
             "last_heartbeat": settings["LastHeartbeatAt"] or None,
             "last_heartbeat_age": _age(settings["LastHeartbeatAt"] or None),
+            "consecutive_failures": int(settings.get("ConsecutiveSnapshotFailures") or 0),
+            "last_failure_at": settings.get("LastSnapshotFailureAt") or None,
+            "failure_notify_threshold": int(settings.get("SnapshotFailureNotifyThreshold") or 3),
         },
         "snapshots": {
             "total": int(snap_total),
@@ -219,6 +224,12 @@ def cmd_status(as_json: bool) -> None:
     t.add_row("Background", f"{'on' if bg['enabled'] else 'off'} · "
                             f"every {bg['interval_minutes']}m · "
                             f"last heartbeat {bg['last_heartbeat_age']}")
+    if bg['consecutive_failures']:
+        t.add_row("⚠ Snapshot failures",
+                  f"{bg['consecutive_failures']} consecutive "
+                  f"(threshold {bg['failure_notify_threshold']}) · "
+                  f"last @ {bg['last_failure_at'] or '?'} · "
+                  f"clear with `idle-shutdown reset-failures`")
     sn = payload['snapshots']
     t.add_row("Snapshots",
               f"{sn['total']} total · latest #{sn['latest_id'] or '-'} ({sn['latest_age']})")
@@ -822,6 +833,20 @@ def cmd_doctor() -> None:
 
     if any(s == FAIL for s, _, _ in results):
         raise click.exceptions.Exit(1)
+
+
+@cli.command("reset-failures")
+def cmd_reset_failures() -> None:
+    """Clear the consecutive-snapshot-failure streak (and the notify latch).
+
+    Run this after fixing whatever was breaking background snapshots so the
+    next failure can re-trigger the toast notification.
+    """
+    with connect() as conn:
+        repo = SettingsRepo(conn)
+        prev = int(repo.get("ConsecutiveSnapshotFailures") or 0)
+        repo.set("ConsecutiveSnapshotFailures", "0")
+    click.echo(f"reset · cleared {prev} consecutive failures")
 
 
 @cli.command("tray")
