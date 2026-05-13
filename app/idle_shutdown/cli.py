@@ -412,7 +412,7 @@ def cmd_restore(snapshot_id: Optional[int], dry_run: bool) -> None:
             planned.append(argv + ([f"  (cwd={cwd})"] if cwd else []))
             return None  # no real PID — also disables move_to_desktop calls
 
-        result = restore(snapshot_id, spawn=_fake_spawn)
+        result = restore(snapshot_id, spawn=_fake_spawn, dry_run=True)
         click.echo(
             f"DRY RUN — snapshot {result.snapshot_id}\n"
             f"  would launch: {result.apps_launched} app(s)\n"
