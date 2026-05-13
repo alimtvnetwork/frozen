@@ -8,6 +8,7 @@ class SnapshotTriggerKind(IntEnum):
     Auto = 1
     Manual = 2
     Scheduled = 3
+    Background = 4
 
 
 class ShutdownOutcomeStatus(IntEnum):
