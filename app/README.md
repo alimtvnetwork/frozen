@@ -11,6 +11,10 @@ python -m idle_shutdown init-db
 python -m idle_shutdown settings show
 ```
 
+## Optional extras
+- `pip install -e ".[tray]"` — system-tray icon (`idle-shutdown tray`)
+- `pip install -e ".[notify]"` — Windows toasts for snapshot-failure alerts
+
 ## Build the shipping exe
 ```
 pyinstaller build/idle-shutdown.spec --noconfirm --clean

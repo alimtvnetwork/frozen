@@ -51,6 +51,36 @@ log aggregator.
 | `idle-shutdown history [--limit N]` | Show recent shutdown events. |
 | `idle-shutdown install-autostart` / `uninstall-autostart` | Add/remove the `HKCU\…\Run` entry. |
 | `idle-shutdown init-db` | Create / re-seed the SQLite file. Safe to run on a missing DB. |
+| `idle-shutdown status [--json]` | One-shot health view: idle, snapshots, last heartbeat, snapshot-failure streak, crash-recovery flag. JSON form is stable for scripting. |
+| `idle-shutdown doctor` | Preflight diagnostic. Prints a colored table; exits non-zero on FAIL. Includes the consecutive-snapshot-failures row. |
+| `idle-shutdown reset-failures` | Clear the consecutive-snapshot-failure streak after fixing whatever broke background snapshots. Re-arms the toast notification. |
+| `idle-shutdown export-config` / `import-config` | Round-trip settings + restore exclusions as JSON, e.g. when moving setup across machines. |
+| `idle-shutdown tray` | System-tray icon (requires `pip install -e ".[tray]"`). |
+
+## Optional extras
+
+- `pip install -e ".[tray]"` — adds the tray icon (`idle-shutdown tray`).
+- `pip install -e ".[notify]"` — Windows toast notifications when background
+  snapshots fail repeatedly. Without this extra the failure is still tracked
+  in the DB and shown by `status` / `doctor`, just no toast.
+
+## Snapshot-failure alerts
+
+Background snapshots run silently every few minutes. If `N` of them fail in a
+row (default `N = 3`, see `SnapshotFailureNotifyThreshold`), you get one
+toast — not a stream. The streak count and last failure time are visible in:
+
+```cmd
+idle-shutdown status
+idle-shutdown doctor
+```
+
+Once you've fixed the underlying cause (e.g. disk full, locked Chrome
+session file), clear the latch so the next failure can re-notify:
+
+```cmd
+idle-shutdown reset-failures
+```
 
 ## What gets saved
 
