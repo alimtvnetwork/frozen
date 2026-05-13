@@ -153,7 +153,7 @@ def test_dry_run_records_plan_without_side_effects(temp_db):
     # No persisted markers.
     with connect() as conn:
         repo = SettingsRepo(conn)
-        assert repo.get("LastRestoredSnapshotId") == "0"
+        assert repo.get("LastRestoredSnapshotId") == 0
         assert repo.get("LastRestoredAt") == ""
 
 
