@@ -716,6 +716,65 @@ class DashboardPanel(_PanelBase):  # pragma: no cover - GUI
         ttk.Label(wrap, text=summary, style="Muted.TLabel",
                   justify="left").pack(anchor="w", **pad)
 
+        # Crash-recovery banner — shows when previous run didn't exit cleanly.
+        try:
+            from idle_shutdown.heartbeat import detect_crash_recovery_candidate
+            is_crash, snap_id, last_hb = detect_crash_recovery_candidate()
+        except Exception:  # noqa: BLE001
+            is_crash, snap_id, last_hb = False, None, None
+        if is_crash and snap_id is not None:
+            ttk.Label(wrap, text="Recover last session",
+                      style="H2.TLabel").pack(anchor="w", pady=(24, 8), **pad)
+            banner = self.tk.Frame(wrap, bg=COLORS["sidebar"],
+                                   highlightthickness=1,
+                                   highlightbackground=COLORS["warn"])
+            banner.pack(fill="x", **pad)
+            self.tk.Label(banner,
+                          text=f"⚠  Previous session ended unexpectedly "
+                               f"(last heartbeat: {last_hb or 'unknown'}).",
+                          bg=COLORS["sidebar"], fg=COLORS["warn"],
+                          font=("Helvetica", 11, "bold"),
+                          anchor="w", padx=14, pady=(12, 2)).pack(fill="x")
+            self.tk.Label(banner,
+                          text=f"Snapshot #{snap_id} is ready to restore.",
+                          bg=COLORS["sidebar"], fg=COLORS["fg_muted"],
+                          font=("Helvetica", 10),
+                          anchor="w", padx=14, pady=(0, 10)).pack(fill="x")
+            row = self.tk.Frame(banner, bg=COLORS["sidebar"])
+            row.pack(anchor="w", padx=10, pady=(0, 12))
+
+            def _do_restore() -> None:
+                from tkinter import messagebox
+                from idle_shutdown.restore import restore as _restore
+                try:
+                    res = _restore(snap_id)
+                    messagebox.showinfo(
+                        "Frozen — Restore complete",
+                        f"Restored snapshot #{res.snapshot_id}: "
+                        f"launched={res.apps_launched}, "
+                        f"skipped={res.apps_skipped}.",
+                    )
+                except Exception as e:  # noqa: BLE001
+                    messagebox.showerror("Restore failed", str(e))
+                self.win.show("dashboard")
+
+            def _dismiss() -> None:
+                try:
+                    with connect() as conn:
+                        SettingsRepo(conn).set("LastRestoredSnapshotId", snap_id)
+                except Exception:  # noqa: BLE001
+                    pass
+                self.win.show("dashboard")
+
+            _make_button(row, text="Restore now",
+                         bg=COLORS["accent"], hover_bg=COLORS["accent_hi"],
+                         fg="#ffffff", command=_do_restore,
+                         padx=18, pady=8).pack(side="left", padx=4)
+            _make_button(row, text="Dismiss",
+                         bg=COLORS["sidebar_hi"], hover_bg=COLORS["border"],
+                         fg=COLORS["fg"], command=_dismiss,
+                         padx=18, pady=8).pack(side="left", padx=4)
+
         # Recent shutdowns
         ttk.Label(wrap, text="Recent shutdowns",
                   style="H2.TLabel").pack(anchor="w", pady=(24, 8), **pad)
