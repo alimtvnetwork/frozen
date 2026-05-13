@@ -21,6 +21,10 @@ dev = [
   "mypy>=1.10",
   "pyinstaller>=6.0",
 ]
+tray = [
+  "pystray>=0.19",
+  "Pillow>=10.0",
+]
 
 [project.scripts]
 idle-shutdown = "idle_shutdown.cli:main"
