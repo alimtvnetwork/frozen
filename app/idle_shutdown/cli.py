@@ -112,6 +112,129 @@ def cmd_counter() -> None:
         click.echo(str(ShutdownCounterRepo(conn).total()))
 
 
+# ----- status ----------------------------------------------------------------
+
+
+@cli.command("status")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON instead of a table.")
+def cmd_status(as_json: bool) -> None:
+    """Concise live health check: service state, idle, snapshots, crash flag."""
+    import json as _json
+    from datetime import datetime, timezone
+    from idle_shutdown.heartbeat import detect_crash_recovery_candidate
+
+    def _age(iso: str | None) -> str:
+        if not iso:
+            return "never"
+        try:
+            ts = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+            s = int((datetime.now(timezone.utc) - ts).total_seconds())
+            if s < 60:
+                return f"{s}s ago"
+            if s < 3600:
+                return f"{s // 60}m ago"
+            if s < 86400:
+                return f"{s // 3600}h ago"
+            return f"{s // 86400}d ago"
+        except Exception:  # noqa: BLE001
+            return str(iso)
+
+    with connect() as conn:
+        s = SettingsRepo(conn)
+        settings = {k: s.get(k) for k in (
+            "ServiceState", "DryRun", "IdleThresholdMinutes",
+            "PopupCountdownSeconds", "SnoozeMinutes",
+            "BackgroundSnapshotsEnabled", "BackgroundSnapshotIntervalMinutes",
+            "DisabledUntil", "LastHeartbeatAt", "CleanShutdown",
+            "LastRestoredSnapshotId", "LastRestoredAt",
+        )}
+        snap_row = conn.execute(
+            "SELECT SnapshotId, CreatedAt, TriggerKindId FROM Snapshot "
+            "ORDER BY SnapshotId DESC LIMIT 1"
+        ).fetchone()
+        snap_total = conn.execute(
+            "SELECT COUNT(*) AS n FROM Snapshot"
+        ).fetchone()["n"]
+
+    is_crash, recover_id, recover_hb = detect_crash_recovery_candidate()
+
+    # Idle source (best-effort; some platforms not wired in this env).
+    idle_seconds: int | None
+    try:
+        from idle_shutdown.platform import get_default_idle_source
+        idle_seconds = int(get_default_idle_source().get_idle_ms() / 1000)
+    except Exception:  # noqa: BLE001
+        idle_seconds = None
+
+    payload = {
+        "service_state": settings["ServiceState"],
+        "dry_run": str(settings["DryRun"]).lower() == "true",
+        "idle_seconds": idle_seconds,
+        "idle_threshold_minutes": int(settings["IdleThresholdMinutes"]),
+        "popup_countdown_seconds": int(settings["PopupCountdownSeconds"]),
+        "snooze_minutes": int(settings["SnoozeMinutes"]),
+        "snooze_until": settings["DisabledUntil"] or None,
+        "background_snapshots": {
+            "enabled": str(settings["BackgroundSnapshotsEnabled"]).lower() == "true",
+            "interval_minutes": int(settings["BackgroundSnapshotIntervalMinutes"]),
+            "last_heartbeat": settings["LastHeartbeatAt"] or None,
+            "last_heartbeat_age": _age(settings["LastHeartbeatAt"] or None),
+        },
+        "snapshots": {
+            "total": int(snap_total),
+            "latest_id": int(snap_row["SnapshotId"]) if snap_row else None,
+            "latest_at": str(snap_row["CreatedAt"]) if snap_row else None,
+            "latest_age": _age(str(snap_row["CreatedAt"]) if snap_row else None),
+        },
+        "last_restored": {
+            "snapshot_id": int(settings["LastRestoredSnapshotId"] or 0) or None,
+            "at": settings["LastRestoredAt"] or None,
+        },
+        "crash_recovery": {
+            "needs_recovery": bool(is_crash),
+            "candidate_snapshot_id": recover_id,
+            "last_heartbeat": recover_hb,
+            "clean_shutdown_flag": str(settings["CleanShutdown"]).lower() == "true",
+        },
+    }
+
+    if as_json:
+        click.echo(_json.dumps(payload, indent=2, default=str))
+        return
+
+    t = Table(title="Idle Shutdown — status", show_header=False)
+    t.add_column("Key", style="bold")
+    t.add_column("Value")
+    t.add_row("Service",
+              f"{payload['service_state']}"
+              + (" [DRY RUN]" if payload['dry_run'] else " [LIVE]"))
+    t.add_row("Idle now",
+              "n/a" if payload['idle_seconds'] is None else f"{payload['idle_seconds']}s "
+              f"(threshold {payload['idle_threshold_minutes']}m)")
+    t.add_row("Popup", f"{payload['popup_countdown_seconds']}s countdown · "
+                       f"snooze {payload['snooze_minutes']}m")
+    if payload['snooze_until']:
+        t.add_row("Snoozed until", payload['snooze_until'])
+    bg = payload['background_snapshots']
+    t.add_row("Background", f"{'on' if bg['enabled'] else 'off'} · "
+                            f"every {bg['interval_minutes']}m · "
+                            f"last heartbeat {bg['last_heartbeat_age']}")
+    sn = payload['snapshots']
+    t.add_row("Snapshots",
+              f"{sn['total']} total · latest #{sn['latest_id'] or '-'} ({sn['latest_age']})")
+    lr = payload['last_restored']
+    t.add_row("Last restored",
+              f"#{lr['snapshot_id']} at {lr['at']}" if lr['snapshot_id'] else "never")
+    cr = payload['crash_recovery']
+    if cr['needs_recovery']:
+        t.add_row("⚠ Crash recovery",
+                  f"unexpected shutdown — restore snapshot #{cr['candidate_snapshot_id']} "
+                  f"(last heartbeat {cr['last_heartbeat'] or 'unknown'})")
+    else:
+        t.add_row("Crash recovery", "clean — nothing to recover")
+    console.print(t)
+
+
 # ----- history ---------------------------------------------------------------
 
 
