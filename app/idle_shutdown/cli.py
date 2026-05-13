@@ -555,6 +555,7 @@ def cmd_restore(snapshot_id: Optional[int], dry_run: bool) -> None:
     click.echo(
         f"restored snapshot {result.snapshot_id}: "
         f"launched={result.apps_launched} skipped={result.apps_skipped} "
+        f"excluded={result.apps_excluded} "
         f"chrome={'yes' if result.chrome_launched else 'no'}"
         + (f" variants={','.join(result.variants_launched)}"
            if result.variants_launched else "")
