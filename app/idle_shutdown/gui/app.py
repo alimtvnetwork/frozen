@@ -489,6 +489,7 @@ class _MainWindow:  # pragma: no cover - GUI
             get_idle_threshold_minutes=lambda: int(_get_setting("IdleThresholdMinutes")),
             get_popup_countdown_seconds=lambda: int(_get_setting("PopupCountdownSeconds")),
             get_service_enabled=lambda: _get_setting("ServiceState") == "Enabled",
+            get_snooze_minutes=lambda: int(_get_setting("SnoozeMinutes")),
         )
         self._service = IdleService(callbacks)
         def _guard_cfg() -> GuardConfig:
