@@ -157,6 +157,7 @@ SETTING_DEFS: tuple[SettingDef, ...] = (
                _validate_int_range(1, 365), int),
     SettingDef("CleanShutdown", "true", _validate_bool, lambda v: v == "true"),
     SettingDef("LastHeartbeatAt", "", _validate_iso8601_or_empty, str),
+    SettingDef("SnoozeMinutes", "30", _validate_int_range(1, 240), int),
 )
 
 SETTINGS_BY_KEY: dict[str, SettingDef] = {s.key: s for s in SETTING_DEFS}
