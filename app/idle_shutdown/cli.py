@@ -287,6 +287,18 @@ def cmd_run(silent: bool, dry_run_flag: Optional[bool]) -> None:  # noqa: ARG001
             camera_enabled=str(_settings_provider("GuardCameraEnabled")).lower() == "true",
         )
     guard = ActivityGuard(_guard_cfg)
+    # Crash-recovery notice (Phase C — console fallback for headless runs).
+    try:
+        from idle_shutdown.heartbeat import detect_crash_recovery_candidate
+        is_crash, snap_id, last_hb = detect_crash_recovery_candidate()
+        if is_crash and snap_id is not None:
+            click.echo(
+                f"⚠ previous session ended unexpectedly (last heartbeat: "
+                f"{last_hb or 'unknown'}). "
+                f"Run `idle-shutdown restore --snapshot-id {snap_id}` to recover."
+            )
+    except Exception:  # noqa: BLE001
+        pass
     heartbeat = HeartbeatScheduler(
         take_snapshot=lambda trigger: take_snapshot(trigger, record_log=False),
     )
