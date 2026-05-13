@@ -181,6 +181,32 @@ def _apply_ttk_theme(ttk) -> None:
     style.configure("TCombobox", fieldbackground=COLORS["input_bg"],
                     background=COLORS["input_bg"], foreground=COLORS["fg"],
                     arrowcolor=COLORS["fg"])
+    style.map("TCombobox",
+              fieldbackground=[("readonly", COLORS["input_bg"])],
+              foreground=[("readonly", COLORS["fg"])],
+              background=[("readonly", COLORS["input_bg"])],
+              selectbackground=[("readonly", COLORS["input_bg"])],
+              selectforeground=[("readonly", COLORS["fg"])])
+    style.configure("TSpinbox", fieldbackground=COLORS["input_bg"],
+                    background=COLORS["input_bg"], foreground=COLORS["fg"],
+                    insertcolor=COLORS["fg"], arrowcolor=COLORS["fg"],
+                    bordercolor=COLORS["border"], lightcolor=COLORS["border"],
+                    darkcolor=COLORS["border"])
+    style.map("TSpinbox",
+              fieldbackground=[("readonly", COLORS["input_bg"]),
+                               ("!disabled", COLORS["input_bg"])],
+              foreground=[("!disabled", COLORS["fg"])])
+    # Card-styled labels for the settings panel
+    style.configure("Card.TFrame", background=COLORS["sidebar"])
+    style.configure("CardTitle.TLabel", background=COLORS["sidebar"],
+                    foreground=COLORS["fg"], font=("Helvetica", 13, "bold"))
+    style.configure("CardMuted.TLabel", background=COLORS["sidebar"],
+                    foreground=COLORS["fg_muted"], font=("Helvetica", 11))
+    style.configure("Card.TCheckbutton", background=COLORS["sidebar"],
+                    foreground=COLORS["fg"], focuscolor=COLORS["accent"])
+    style.map("Card.TCheckbutton",
+              background=[("active", COLORS["sidebar"])],
+              foreground=[("active", COLORS["fg"])])
     style.configure("Treeview", background=COLORS["input_bg"],
                     fieldbackground=COLORS["input_bg"],
                     foreground=COLORS["fg"], borderwidth=0, rowheight=26)
