@@ -267,6 +267,7 @@ def restore(
     switch_to_desktop: Callable[[int], None] = _switch_to_desktop_default,
     move_to_desktop: Callable[[int, int], None] = _move_to_desktop_default,
     now_iso: Callable[[], str] = utc_now_iso,
+    dry_run: bool = False,
 ) -> RestoreResult:
     data = _read_snapshot(snapshot_id)
     live_fn = live_processes or _default_live_processes
@@ -354,10 +355,11 @@ def restore(
             logger.warning("event=restore_item browser=%s status=failed err=%s",
                            v.browser_name, e)
 
-    with connect() as conn:
-        repo = SettingsRepo(conn)
-        repo.set("LastRestoredSnapshotId", data.snapshot_id)
-        repo.set("LastRestoredAt", now_iso())
+    if not dry_run:
+        with connect() as conn:
+            repo = SettingsRepo(conn)
+            repo.set("LastRestoredSnapshotId", data.snapshot_id)
+            repo.set("LastRestoredAt", now_iso())
 
     logger.info("event=restore_completed snapshot_id=%d launched=%d skipped=%d",
                 data.snapshot_id, launched, skipped)
