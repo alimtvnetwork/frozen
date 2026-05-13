@@ -518,7 +518,12 @@ def cmd_simulate(countdown: int, no_popup: bool, force: bool) -> None:
 @click.option("--snapshot-id", type=int, default=None)
 @click.option("--dry-run", is_flag=True,
               help="Preview what would launch (no apps started, no Chrome).")
-def cmd_restore(snapshot_id: Optional[int], dry_run: bool) -> None:
+@click.option("--apps-only", is_flag=True,
+              help="Restore native apps only (skip Chrome and variant browsers).")
+@click.option("--chrome-only", is_flag=True,
+              help="Restore Chrome + variant tabs only (skip native apps).")
+def cmd_restore(snapshot_id: Optional[int], dry_run: bool,
+                apps_only: bool, chrome_only: bool) -> None:
     """Restore the latest (or given) snapshot.
 
     With ``--dry-run``: prints the full launch plan (apps + Chrome tabs per
@@ -535,7 +540,8 @@ def cmd_restore(snapshot_id: Optional[int], dry_run: bool) -> None:
             planned.append(argv + ([f"  (cwd={cwd})"] if cwd else []))
             return None  # no real PID — also disables move_to_desktop calls
 
-        result = restore(snapshot_id, spawn=_fake_spawn, dry_run=True)
+        result = restore(snapshot_id, spawn=_fake_spawn, dry_run=True,
+                         apps_only=apps_only, chrome_only=chrome_only)
         click.echo(
             f"DRY RUN — snapshot {result.snapshot_id}\n"
             f"  would launch: {result.apps_launched} app(s)\n"
@@ -551,7 +557,8 @@ def cmd_restore(snapshot_id: Optional[int], dry_run: bool) -> None:
         return
 
     with acquire_single_instance():
-        result = restore(snapshot_id)
+        result = restore(snapshot_id,
+                         apps_only=apps_only, chrome_only=chrome_only)
     click.echo(
         f"restored snapshot {result.snapshot_id}: "
         f"launched={result.apps_launched} skipped={result.apps_skipped} "
