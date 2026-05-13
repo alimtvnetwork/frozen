@@ -269,7 +269,11 @@ def restore(
     move_to_desktop: Callable[[int, int], None] = _move_to_desktop_default,
     now_iso: Callable[[], str] = utc_now_iso,
     dry_run: bool = False,
+    apps_only: bool = False,
+    chrome_only: bool = False,
 ) -> RestoreResult:
+    if apps_only and chrome_only:
+        raise RestoreError("apps_only and chrome_only are mutually exclusive")
     data = _read_snapshot(snapshot_id)
     live_fn = live_processes or _default_live_processes
 
@@ -291,7 +295,8 @@ def restore(
 
     # Group apps by target desktop so we switch once per desktop, preserving
     # the original AppProcessId order within each group.
-    apps_sorted = sorted(enumerate(data.apps), key=lambda t: (t[1].desktop_index, t[0]))
+    apps_iter = [] if chrome_only else data.apps
+    apps_sorted = sorted(enumerate(apps_iter), key=lambda t: (t[1].desktop_index, t[0]))
     for desk_idx, group in groupby(apps_sorted, key=lambda t: t[1].desktop_index):
         group_apps = [a for _, a in group]
         if data.desktop_count > 1 and not dry_run:
@@ -322,7 +327,7 @@ def restore(
                                app.executable_path, e)
 
     chrome_launched = False
-    if data.chrome_executable:
+    if data.chrome_executable and not apps_only:
         if _is_duplicate(
             AppRow(data.chrome_executable, None, None, 0), live
         ):
@@ -340,7 +345,7 @@ def restore(
                 logger.warning("event=restore_item exe=chrome status=failed err=%s", e)
 
     variants_launched: list[str] = []
-    for v in data.variant_sessions:
+    for v in ([] if apps_only else data.variant_sessions):
         if not v.executable_path:
             logger.warning(
                 "event=restore_variant_skipped browser=%s reason=exe_not_found tabs=%d",
