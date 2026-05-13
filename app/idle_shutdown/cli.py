@@ -793,6 +793,24 @@ def cmd_doctor() -> None:
     except Exception as e:  # noqa: BLE001
         results.append((WARN, "shutdown mode", str(e)))
 
+    # 8. Background-snapshot failure streak
+    try:
+        with connect() as conn:
+            repo = SettingsRepo(conn)
+            fails = int(repo.get("ConsecutiveSnapshotFailures") or 0)
+            last_fail = str(repo.get("LastSnapshotFailureAt") or "")
+            threshold = int(repo.get("SnapshotFailureNotifyThreshold") or 3)
+        if fails == 0:
+            results.append((OK, "snapshot failures", "no recent failures"))
+        elif fails < threshold:
+            results.append((WARN, "snapshot failures",
+                            f"{fails} consecutive (threshold {threshold}), last @ {last_fail or '?'}"))
+        else:
+            results.append((FAIL, "snapshot failures",
+                            f"{fails} consecutive (≥ threshold {threshold}), last @ {last_fail or '?'}"))
+    except Exception as e:  # noqa: BLE001
+        results.append((WARN, "snapshot failures", str(e)))
+
     table = Table(title="idle-shutdown doctor")
     table.add_column("Status")
     table.add_column("Check")
