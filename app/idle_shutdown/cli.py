@@ -147,6 +147,8 @@ def cmd_status(as_json: bool) -> None:
             "BackgroundSnapshotsEnabled", "BackgroundSnapshotIntervalMinutes",
             "DisabledUntil", "LastHeartbeatAt", "CleanShutdown",
             "LastRestoredSnapshotId", "LastRestoredAt",
+            "ConsecutiveSnapshotFailures", "LastSnapshotFailureAt",
+            "SnapshotFailureNotifyThreshold",
         )}
         snap_row = conn.execute(
             "SELECT SnapshotId, CreatedAt, TriggerKindId FROM Snapshot "
