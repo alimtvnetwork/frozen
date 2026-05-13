@@ -235,6 +235,7 @@ def cmd_run(silent: bool, dry_run_flag: Optional[bool]) -> None:  # noqa: ARG001
     from idle_shutdown.enums import SnapshotTriggerKind
     from idle_shutdown.single_instance import acquire_single_instance
     from idle_shutdown.activity_guard import ActivityGuard, GuardConfig
+    from idle_shutdown.heartbeat import HeartbeatScheduler
 
     def _settings_provider(key: str):
         with connect() as conn:
@@ -286,16 +287,36 @@ def cmd_run(silent: bool, dry_run_flag: Optional[bool]) -> None:  # noqa: ARG001
             camera_enabled=str(_settings_provider("GuardCameraEnabled")).lower() == "true",
         )
     guard = ActivityGuard(_guard_cfg)
+    # Crash-recovery notice (Phase C — console fallback for headless runs).
+    try:
+        from idle_shutdown.heartbeat import detect_crash_recovery_candidate
+        is_crash, snap_id, last_hb = detect_crash_recovery_candidate()
+        if is_crash and snap_id is not None:
+            click.echo(
+                f"⚠ previous session ended unexpectedly (last heartbeat: "
+                f"{last_hb or 'unknown'}). "
+                f"Run `idle-shutdown restore --snapshot-id {snap_id}` to recover."
+            )
+    except Exception:  # noqa: BLE001
+        pass
+    heartbeat = HeartbeatScheduler(
+        take_snapshot=lambda trigger: take_snapshot(trigger, record_log=False),
+    )
+    heartbeat.mark_started()
     monitor = IdleMonitor(
         source=get_default_idle_source(),
         threshold_ms_provider=service.threshold_ms,
         on_threshold=service.on_threshold_reached,
         on_activity=service.on_activity_during_prompt,
         is_busy=guard.is_busy,
+        on_tick=heartbeat.tick,
     )
     with acquire_single_instance():
         click.echo("idle monitor running (Ctrl+C to stop)")
-        monitor.run_forever()
+        try:
+            monitor.run_forever()
+        finally:
+            heartbeat.mark_clean_exit()
 
 
 @cli.command("snapshot")
@@ -384,6 +405,21 @@ def cmd_restore(snapshot_id: Optional[int]) -> None:
         f"chrome={'yes' if result.chrome_launched else 'no'}"
         + (f" variants={','.join(result.variants_launched)}"
            if result.variants_launched else "")
+    )
+
+
+@cli.command("recover")
+def cmd_recover() -> None:
+    """Detect an unexpected shutdown and report what's recoverable."""
+    from idle_shutdown.heartbeat import detect_crash_recovery_candidate
+    is_crash, snap_id, last_hb = detect_crash_recovery_candidate()
+    if not is_crash:
+        click.echo("no crash detected — last shutdown was clean")
+        return
+    click.echo(
+        f"⚠ unexpected shutdown detected. Last heartbeat: {last_hb or 'unknown'}.\n"
+        f"Latest snapshot: #{snap_id}.\n"
+        f"To restore: idle-shutdown restore --snapshot-id {snap_id}"
     )
 
 

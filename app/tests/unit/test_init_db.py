@@ -27,7 +27,9 @@ def test_init_db_seeds_lookups(temp_db):
         triggers = conn.execute("SELECT KindName FROM SnapshotTriggerKind ORDER BY SnapshotTriggerKindId").fetchall()
         outcomes = conn.execute("SELECT StatusName FROM ShutdownOutcomeStatus ORDER BY ShutdownOutcomeStatusId").fetchall()
         counter = conn.execute("SELECT TotalCount FROM ShutdownCounter").fetchone()
-    assert [r["KindName"] for r in triggers] == ["Auto", "Manual", "Scheduled"]
+    assert [r["KindName"] for r in triggers] == [
+        "Auto", "Manual", "Scheduled", "Background",
+    ]
     assert [r["StatusName"] for r in outcomes] == ["Completed", "Cancelled", "Failed"]
     assert counter["TotalCount"] == 0
 

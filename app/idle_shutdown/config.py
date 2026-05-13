@@ -148,6 +148,15 @@ SETTING_DEFS: tuple[SettingDef, ...] = (
     SettingDef("LastRestoredAt", "", _validate_iso8601_or_empty, str),
     SettingDef("DisabledUntil", "", _validate_iso8601_or_empty, str),
     SettingDef("FirstRunCompleted", "false", _validate_bool, lambda v: v == "true"),
+    # --- Crash-safe background snapshots (Phase A–D) ---
+    SettingDef("BackgroundSnapshotsEnabled", "true", _validate_bool,
+               lambda v: v == "true"),
+    SettingDef("BackgroundSnapshotIntervalMinutes", "5",
+               _validate_int_range(1, 60), int),
+    SettingDef("BackgroundSnapshotRetentionDays", "7",
+               _validate_int_range(1, 365), int),
+    SettingDef("CleanShutdown", "true", _validate_bool, lambda v: v == "true"),
+    SettingDef("LastHeartbeatAt", "", _validate_iso8601_or_empty, str),
 )
 
 SETTINGS_BY_KEY: dict[str, SettingDef] = {s.key: s for s in SETTING_DEFS}

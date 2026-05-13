@@ -82,7 +82,7 @@ CREATE INDEX IF NOT EXISTS IX_ShutdownLog_OccurredAt ON ShutdownLog(OccurredAt D
 
 -- Lookup seeds (idempotent)
 INSERT OR IGNORE INTO SnapshotTriggerKind (SnapshotTriggerKindId, KindName) VALUES
-  (1, 'Auto'), (2, 'Manual'), (3, 'Scheduled');
+  (1, 'Auto'), (2, 'Manual'), (3, 'Scheduled'), (4, 'Background');
 
 INSERT OR IGNORE INTO ShutdownOutcomeStatus (ShutdownOutcomeStatusId, StatusName) VALUES
   (1, 'Completed'), (2, 'Cancelled'), (3, 'Failed');

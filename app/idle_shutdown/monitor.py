@@ -120,6 +120,7 @@ class IdleMonitor:
         sleeper: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
         is_busy: Callable[[], tuple[bool, str | None]] | None = None,
+        on_tick: Callable[[bool], None] | None = None,
     ) -> None:
         self._source = source
         self._threshold_ms_provider = threshold_ms_provider
@@ -129,6 +130,7 @@ class IdleMonitor:
         self._sleeper = sleeper
         self._clock = clock
         self._is_busy = is_busy or (lambda: (False, None))
+        self._on_tick = on_tick or (lambda _busy: None)
         self._prompting = False
         self._busy = False
         self._busy_reason: str | None = None
@@ -184,6 +186,10 @@ class IdleMonitor:
             if self._prompting:
                 self._prompting = False
                 self._on_activity()
+            try:
+                self._on_tick(True)
+            except Exception:  # noqa: BLE001
+                pass
             return
 
         effective_idle_ms = idle_ms
@@ -198,6 +204,10 @@ class IdleMonitor:
         elif effective_idle_ms < threshold_ms and self._prompting:
             self._prompting = False
             self._on_activity()
+        try:
+            self._on_tick(False)
+        except Exception:  # noqa: BLE001
+            pass
 
     def run_forever(self) -> None:  # pragma: no cover - infinite loop
         while not self._stop:

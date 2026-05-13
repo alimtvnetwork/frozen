@@ -123,6 +123,9 @@ def launch_gui() -> None:  # pragma: no cover - GUI entrypoint
 
     _apply_ttk_theme(ttk)
 
+    # Crash-recovery prompt — runs once on startup, before the main UI.
+    _maybe_show_crash_recovery(root, tk)
+
     # First-run wizard
     if str(_get_setting("FirstRunCompleted")).lower() != "true":
         _run_first_run_wizard(root, tk, ttk)
@@ -133,6 +136,56 @@ def launch_gui() -> None:  # pragma: no cover - GUI entrypoint
     # the user explicitly presses "Start monitor" on the sidebar.
     app.start_ui_heartbeat()
     root.mainloop()
+
+
+def _maybe_show_crash_recovery(root, tk) -> None:  # pragma: no cover - GUI
+    """If the previous run did not exit cleanly, offer to restore."""
+    from tkinter import messagebox
+    from idle_shutdown.heartbeat import detect_crash_recovery_candidate
+    from idle_shutdown.db.repos import SnapshotReadRepo
+
+    is_crash, snapshot_id, last_hb = detect_crash_recovery_candidate()
+    if not is_crash or snapshot_id is None:
+        return
+    # Build a friendly summary.
+    try:
+        with connect() as conn:
+            detail = SnapshotReadRepo(conn).get_detail(snapshot_id)
+    except Exception:  # noqa: BLE001
+        detail = None
+    apps_n = len(detail.apps) if detail else 0
+    tabs_n = len(detail.tabs) if detail else 0
+    when = last_hb or (detail.created_at if detail else "earlier")
+    msg = (
+        "Your last session ended unexpectedly "
+        f"(last heartbeat: {when}).\n\n"
+        f"Snapshot #{snapshot_id} contains:\n"
+        f"  • {apps_n} application(s)\n"
+        f"  • {tabs_n} browser tab(s)\n\n"
+        "Restore it now?"
+    )
+    answer = messagebox.askyesno("Frozen — Recover last session", msg, parent=root)
+    if answer:
+        try:
+            from idle_shutdown.restore import restore
+            result = restore(snapshot_id)
+            messagebox.showinfo(
+                "Frozen — Restore complete",
+                f"Restored snapshot #{result.snapshot_id}: "
+                f"launched={result.apps_launched}, skipped={result.apps_skipped}.",
+                parent=root,
+            )
+        except Exception as e:  # noqa: BLE001
+            messagebox.showerror(
+                "Frozen — Restore failed", str(e), parent=root,
+            )
+    else:
+        # User declined: mark this snapshot as "handled" so we don't ask again.
+        try:
+            with connect() as conn:
+                SettingsRepo(conn).set("LastRestoredSnapshotId", snapshot_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("recovery decline write failed")
 
 
 def _apply_ttk_theme(ttk) -> None:
