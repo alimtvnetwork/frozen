@@ -1118,6 +1118,94 @@ class SnapshotsPanel(_PanelBase):  # pragma: no cover - GUI
             except Exception:  # noqa: BLE001
                 return None
 
+        def _restore_and_report(sid: int) -> None:
+            try:
+                res = run_restore(sid)
+            except Exception as e:  # noqa: BLE001
+                messagebox.showerror("Restore failed", str(e))
+                return
+            messagebox.showinfo(
+                "Restore complete",
+                f"Snapshot #{res.snapshot_id}\n"
+                f"Apps launched: {res.apps_launched}\n"
+                f"Apps skipped (already running): {res.apps_skipped}\n"
+                f"Apps excluded (by rules): {res.apps_excluded}\n"
+                f"Chrome launched: {'yes' if res.chrome_launched else 'no'}")
+
+        def show_snapshot_details(_event=None) -> None:  # noqa: ANN001
+            sid = _selected_snapshot_id()
+            if sid is None:
+                messagebox.showinfo(
+                    "No snapshot selected",
+                    "Pick a snapshot from the list first.")
+                return
+            apps_count = 0
+            tabs_count = 0
+            sample_apps: list[str] = []
+            sample_tabs: list[str] = []
+            created = ""
+            try:
+                with connect() as conn:
+                    row = conn.execute(
+                        "SELECT CreatedAt FROM Snapshot WHERE SnapshotId=?",
+                        (sid,)).fetchone()
+                    created = (row[0] if row else "") or ""
+                    apps_count = int(conn.execute(
+                        "SELECT COUNT(*) FROM AppProcess a "
+                        "JOIN VirtualDesktop v ON v.VirtualDesktopId=a.VirtualDesktopId "
+                        "WHERE v.SnapshotId=?", (sid,)).fetchone()[0])
+                    tabs_count = int(conn.execute(
+                        "SELECT COUNT(*) FROM ChromeTab t "
+                        "JOIN ChromeWindow w ON w.ChromeWindowId=t.ChromeWindowId "
+                        "WHERE w.SnapshotId=?", (sid,)).fetchone()[0])
+                    sample_apps = [str(r[0]) for r in conn.execute(
+                        "SELECT a.ExecutablePath FROM AppProcess a "
+                        "JOIN VirtualDesktop v ON v.VirtualDesktopId=a.VirtualDesktopId "
+                        "WHERE v.SnapshotId=? LIMIT 5", (sid,)).fetchall()]
+                    sample_tabs = [str(r[0]) for r in conn.execute(
+                        "SELECT t.Title FROM ChromeTab t "
+                        "JOIN ChromeWindow w ON w.ChromeWindowId=t.ChromeWindowId "
+                        "WHERE w.SnapshotId=? LIMIT 5", (sid,)).fetchall()]
+            except Exception as e:  # noqa: BLE001
+                messagebox.showerror("Could not read snapshot", str(e))
+                return
+
+            dlg = self.tk.Toplevel(root)
+            dlg.title(f"Snapshot #{sid}")
+            dlg.transient(root)
+            frm = ttk.Frame(dlg, padding=16)
+            frm.pack(fill="both", expand=True)
+            ttk.Label(frm, text=f"Snapshot #{sid}",
+                      style="H2.TLabel").pack(anchor="w")
+            ttk.Label(frm, text=f"Created: {created}",
+                      style="Muted.TLabel").pack(anchor="w", pady=(2, 8))
+            ttk.Label(frm,
+                      text=f"Apps captured: {apps_count}    "
+                           f"Chrome tabs captured: {tabs_count}").pack(anchor="w")
+            if sample_apps:
+                ttk.Label(frm, text="\nApps (first 5):",
+                          style="Muted.TLabel").pack(anchor="w")
+                for p in sample_apps:
+                    ttk.Label(frm, text=f"  • {p}").pack(anchor="w")
+            if sample_tabs:
+                ttk.Label(frm, text="\nTabs (first 5):",
+                          style="Muted.TLabel").pack(anchor="w")
+                for t in sample_tabs:
+                    ttk.Label(frm, text=f"  • {t}").pack(anchor="w")
+            ttk.Label(frm,
+                      text="\nNote: apps already running on this machine are skipped\n"
+                           "as duplicates — that is why 'launched' can be 0.",
+                      style="Muted.TLabel").pack(anchor="w", pady=(8, 8))
+            btns = ttk.Frame(frm)
+            btns.pack(fill="x", pady=(8, 0))
+            ttk.Button(btns, text="Close",
+                       command=dlg.destroy).pack(side="right")
+            ttk.Button(btns, text="↺  Restore this snapshot",
+                       style="Primary.TButton",
+                       command=lambda: (dlg.destroy(),
+                                        _restore_and_report(sid))
+                       ).pack(side="right", padx=(0, 8))
+
         def do_restore_selected(_event=None) -> None:  # noqa: ANN001
             sid = _selected_snapshot_id()
             if sid is None:
@@ -1129,18 +1217,9 @@ class SnapshotsPanel(_PanelBase):  # pragma: no cover - GUI
                     "Restore snapshot?",
                     f"Reopen the apps and Chrome tabs from snapshot #{sid}?"):
                 return
-            try:
-                res = run_restore(sid)
-            except Exception as e:  # noqa: BLE001
-                messagebox.showerror("Restore failed", str(e))
-                return
-            messagebox.showinfo(
-                "Restore complete",
-                f"Snapshot #{res.snapshot_id}\n"
-                f"Apps launched: {res.apps_launched}\n"
-                f"Chrome launched: {'yes' if res.chrome_launched else 'no'}")
+            _restore_and_report(sid)
 
-        tv.bind("<Double-1>", do_restore_selected)
+        tv.bind("<Double-1>", show_snapshot_details)
 
         row_actions = ttk.Frame(wrap, style="Panel.TFrame")
         row_actions.pack(fill="x", pady=(0, 28), **pad)
