@@ -1155,6 +1155,81 @@ def cmd_export(snapshot_id: Optional[int], fmt: str,
     click.echo(f"wrote {output}")
 
 
+@cli.command("logs")
+@click.option("--tail", "tail", type=int, default=50, show_default=True,
+              help="Number of lines from the end of app.log to show.")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit each line as a JSON object (parses event=k v pairs).")
+@click.option("--grep", "pattern", default=None,
+              help="Filter to lines matching this substring (case-insensitive).")
+@click.option("--path", "show_path", is_flag=True,
+              help="Print the resolved log file path and exit.")
+def cmd_logs(tail: int, as_json: bool, pattern: Optional[str],
+             show_path: bool) -> None:
+    """Show the tail of the rotating app log (``%LOCALAPPDATA%/.../app.log``).
+
+    Useful during the Phase 5 smoke test to confirm background snapshots,
+    shutdown attempts, and restore events without opening the file by hand.
+    """
+    import json as _json
+    from idle_shutdown.config import log_path
+
+    path = log_path()
+    if show_path:
+        click.echo(str(path))
+        return
+    if not path.exists():
+        click.echo(f"no log file at {path}", err=True)
+        raise click.exceptions.Exit(1)
+
+    if tail <= 0:
+        tail = 50
+    needle = pattern.lower() if pattern else None
+
+    # Read whole file (rotated at 1 MiB) — cheap, simpler than reverse-seek.
+    with path.open("r", encoding="utf-8", errors="replace") as fh:
+        lines = fh.readlines()
+    if needle:
+        lines = [ln for ln in lines if needle in ln.lower()]
+    lines = lines[-tail:]
+
+    if not as_json:
+        for ln in lines:
+            click.echo(ln.rstrip("\n"))
+        return
+
+    for ln in lines:
+        ln = ln.rstrip("\n")
+        # Try native JSON first (when IDLE_SHUTDOWN_LOG_JSON=1).
+        if ln.startswith("{"):
+            try:
+                _json.loads(ln)
+                click.echo(ln)
+                continue
+            except Exception:  # noqa: BLE001
+                pass
+        # Fall back to: "<asctime> <LEVEL> <logger> <message>"
+        rec: dict = {"raw": ln}
+        parts = ln.split(" ", 4)
+        if len(parts) >= 5:
+            rec.update({
+                "ts": f"{parts[0]} {parts[1]}",
+                "level": parts[2],
+                "logger": parts[3],
+                "message": parts[4],
+            })
+            # Parse event=foo key=val pairs in the message.
+            tokens = parts[4].split()
+            evt: dict = {}
+            for t in tokens:
+                if "=" in t:
+                    k, v = t.split("=", 1)
+                    evt[k] = v
+            if evt:
+                rec["event"] = evt
+        click.echo(_json.dumps(rec))
+
+
 # ----- entrypoint with exit-code mapping ------------------------------------
 
 
