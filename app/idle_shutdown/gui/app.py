@@ -437,10 +437,17 @@ class _MainWindow:  # pragma: no cover - GUI
         if self._monitor_running and self._monitor is not None:
             idle_ms = self._read_idle_ms()
             threshold = self._threshold_ms()
-            try:
-                self._monitor.tick()
-            except Exception:  # noqa: BLE001
-                logger.exception("monitor tick failed")
+            # Do NOT tick the monitor while the countdown popup is open —
+            # focusing/raising the popup itself counts as user input on
+            # macOS, which would cause IdleMonitor to fire
+            # `on_activity_during_prompt` and dismiss the popup after ~1s.
+            # The popup's own buttons + timeout are the source of truth
+            # while it is visible.
+            if self._popup_win is None:
+                try:
+                    self._monitor.tick()
+                except Exception:  # noqa: BLE001
+                    logger.exception("monitor tick failed")
             busy = bool(getattr(self._monitor, "busy", False))
             busy_reason = getattr(self._monitor, "busy_reason", None)
             if busy:
