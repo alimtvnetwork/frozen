@@ -1092,7 +1092,49 @@ class SnapshotsPanel(_PanelBase):  # pragma: no cover - GUI
             except Exception:  # noqa: BLE001
                 trig = str(r[2])
             tv.insert("", "end", values=(r[0], r[1], trig))
-        tv.pack(fill="x", pady=(0, 28), **pad)
+        tv.pack(fill="x", pady=(0, 8), **pad)
+
+        def _selected_snapshot_id() -> int | None:
+            sel = tv.selection()
+            if not sel:
+                return None
+            try:
+                return int(tv.item(sel[0], "values")[0])
+            except Exception:  # noqa: BLE001
+                return None
+
+        def do_restore_selected(_event=None) -> None:  # noqa: ANN001
+            sid = _selected_snapshot_id()
+            if sid is None:
+                messagebox.showinfo(
+                    "No snapshot selected",
+                    "Pick a snapshot from the list first.")
+                return
+            if not messagebox.askyesno(
+                    "Restore snapshot?",
+                    f"Reopen the apps and Chrome tabs from snapshot #{sid}?"):
+                return
+            try:
+                res = run_restore(sid)
+            except Exception as e:  # noqa: BLE001
+                messagebox.showerror("Restore failed", str(e))
+                return
+            messagebox.showinfo(
+                "Restore complete",
+                f"Snapshot #{res.snapshot_id}\n"
+                f"Apps launched: {res.apps_launched}\n"
+                f"Chrome launched: {'yes' if res.chrome_launched else 'no'}")
+
+        tv.bind("<Double-1>", do_restore_selected)
+
+        row_actions = ttk.Frame(wrap, style="Panel.TFrame")
+        row_actions.pack(fill="x", pady=(0, 28), **pad)
+        ttk.Button(row_actions, text="↺  Open selected snapshot",
+                   style="Primary.TButton",
+                   command=do_restore_selected).pack(side="left")
+        ttk.Label(row_actions,
+                  text="Tip: double-click a row to open it.",
+                  style="Muted.TLabel").pack(side="left", padx=(12, 0))
 
 
 class AboutPanel(_PanelBase):  # pragma: no cover - GUI
