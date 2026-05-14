@@ -1170,9 +1170,10 @@ class SnapshotsPanel(_PanelBase):  # pragma: no cover - GUI
                 messagebox.showerror("Could not read snapshot", str(e))
                 return
 
-            dlg = self.tk.Toplevel(root)
+            top = self.parent.winfo_toplevel()
+            dlg = self.tk.Toplevel(top)
             dlg.title(f"Snapshot #{sid}")
-            dlg.transient(root)
+            dlg.transient(top)
             frm = ttk.Frame(dlg, padding=16)
             frm.pack(fill="both", expand=True)
             ttk.Label(frm, text=f"Snapshot #{sid}",
