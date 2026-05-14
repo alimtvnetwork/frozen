@@ -1133,6 +1133,10 @@ class SnapshotsPanel(_PanelBase):  # pragma: no cover - GUI
                 f"Chrome launched: {'yes' if res.chrome_launched else 'no'}")
 
         def show_snapshot_details(_event=None) -> None:  # noqa: ANN001
+            if _event is not None:
+                row_iid = tv.identify_row(_event.y)
+                if row_iid:
+                    tv.selection_set(row_iid)
             sid = _selected_snapshot_id()
             if sid is None:
                 messagebox.showinfo(
@@ -1170,10 +1174,12 @@ class SnapshotsPanel(_PanelBase):  # pragma: no cover - GUI
                 messagebox.showerror("Could not read snapshot", str(e))
                 return
 
-            top = self.parent.winfo_toplevel()
-            dlg = self.tk.Toplevel(top)
+            main_window = self.parent.winfo_toplevel()
+            dlg = self.tk.Toplevel(main_window)
             dlg.title(f"Snapshot #{sid}")
-            dlg.transient(top)
+            dlg.transient(main_window)
+            dlg.grab_set()
+            dlg.focus_set()
             frm = ttk.Frame(dlg, padding=16)
             frm.pack(fill="both", expand=True)
             ttk.Label(frm, text=f"Snapshot #{sid}",
