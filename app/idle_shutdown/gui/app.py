@@ -1031,6 +1031,7 @@ class SnapshotsPanel(_PanelBase):  # pragma: no cover - GUI
                 f"{res.desktop_count} virtual desktops",
             )
             refresh_latest()
+            refresh_history()
 
         def do_restore() -> None:
             if not messagebox.askyesno(
@@ -1062,37 +1063,51 @@ class SnapshotsPanel(_PanelBase):  # pragma: no cover - GUI
         # Snapshot list (latest 30)
         ttk.Label(wrap, text="History", style="H2.TLabel").pack(
             anchor="w", pady=(20, 8), **pad)
-        rows: list[tuple] = []
-        try:
-            with connect() as conn:
-                cur = conn.execute(
-                    "SELECT SnapshotId, CreatedAtUtc, TriggerKindId "
-                    "FROM Snapshot ORDER BY SnapshotId DESC LIMIT 30")
-                rows = list(cur.fetchall())
-        except Exception:  # noqa: BLE001
-            pass
 
-        if not rows:
-            ttk.Label(wrap, text="No snapshots in database.",
-                      style="Muted.TLabel").pack(anchor="w", pady=(0, 24), **pad)
-            return
+        from idle_shutdown.enums import SnapshotTriggerKind as STK
+        empty_var = self.tk.StringVar(value="")
+        empty_lbl = ttk.Label(wrap, textvariable=empty_var,
+                              style="Muted.TLabel")
+        empty_lbl.pack(anchor="w", pady=(0, 8), **pad)
 
         tv = ttk.Treeview(wrap, columns=("id", "when", "trigger"),
-                          show="headings", height=min(12, len(rows)))
+                          show="headings", height=12)
         tv.heading("id", text="ID")
         tv.heading("when", text="Created (UTC)")
         tv.heading("trigger", text="Trigger")
         tv.column("id", width=80, anchor="center")
         tv.column("when", width=260)
         tv.column("trigger", width=120)
-        from idle_shutdown.enums import SnapshotTriggerKind as STK
-        for r in rows:
-            try:
-                trig = STK(r[2]).name
-            except Exception:  # noqa: BLE001
-                trig = str(r[2])
-            tv.insert("", "end", values=(r[0], r[1], trig))
         tv.pack(fill="x", pady=(0, 8), **pad)
+
+        def refresh_history() -> None:
+            for iid in tv.get_children():
+                tv.delete(iid)
+            rows: list[tuple] = []
+            err: str | None = None
+            try:
+                with connect() as conn:
+                    cur = conn.execute(
+                        "SELECT SnapshotId, CreatedAt, TriggerKindId "
+                        "FROM Snapshot ORDER BY SnapshotId DESC LIMIT 30")
+                    rows = list(cur.fetchall())
+            except Exception as e:  # noqa: BLE001
+                err = str(e)
+            if err:
+                empty_var.set(f"Could not read snapshots: {err}")
+                return
+            if not rows:
+                empty_var.set("No snapshots in database yet.")
+                return
+            empty_var.set("")
+            for r in rows:
+                try:
+                    trig = STK(r[2]).name
+                except Exception:  # noqa: BLE001
+                    trig = str(r[2])
+                tv.insert("", "end", values=(r[0], r[1], trig))
+
+        refresh_history()
 
         def _selected_snapshot_id() -> int | None:
             sel = tv.selection()
@@ -1132,6 +1147,8 @@ class SnapshotsPanel(_PanelBase):  # pragma: no cover - GUI
         ttk.Button(row_actions, text="↺  Open selected snapshot",
                    style="Primary.TButton",
                    command=do_restore_selected).pack(side="left")
+        ttk.Button(row_actions, text="⟳  Refresh",
+                   command=refresh_history).pack(side="left", padx=(8, 0))
         ttk.Label(row_actions,
                   text="Tip: double-click a row to open it.",
                   style="Muted.TLabel").pack(side="left", padx=(12, 0))
